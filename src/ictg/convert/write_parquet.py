@@ -16,7 +16,7 @@ def write_parquet_per_input(
     glob_exprs: list[str],
     out_dir: Path,
     member: Optional[str] = None,
-    batch_size: int = 100_000,
+    batch_size: int = 500_000,
 ) -> None:
     for glob_expr in glob_exprs:
         for path_str in sorted(glob.glob(glob_expr)):

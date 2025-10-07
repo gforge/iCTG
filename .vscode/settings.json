@@ -7,7 +7,4 @@
     }
   },
   "isort.args": ["--profile", "black"],
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
-  "python.linting.pylintEnabled": false
 }
