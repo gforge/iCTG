@@ -1,0 +1,13 @@
+{
+  "notebook.defaultFormatter": "ms-python.black-formatter",
+  "editor.defaultFormatter": "ms-python.black-formatter",
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "always"
+    }
+  },
+  "isort.args": ["--profile", "black"],
+  "python.linting.enabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.pylintEnabled": false
+}
