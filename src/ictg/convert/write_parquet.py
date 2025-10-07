@@ -1,3 +1,4 @@
+import glob
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +19,8 @@ def write_parquet_per_input(
     batch_size: int = 100_000,
 ) -> None:
     for glob_expr in glob_exprs:
-        for path in sorted(Path().glob(glob_expr)):
+        for path_str in sorted(glob.glob(glob_expr)):
+            path = Path(path_str)
             out_path = _get_output_path(path, out_dir)
             if out_path is None:
                 print(f"[warn] Skipping file: {path}")

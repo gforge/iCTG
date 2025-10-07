@@ -1,3 +1,4 @@
+import glob
 import io
 import json
 import sys
@@ -34,7 +35,7 @@ def iter_concatenated_json(
                 obj, end = dec.raw_decode(s)
                 if isinstance(obj, dict):
                     objects_yielded += 1
-                    if objects_yielded % 5e3 == 0:
+                    if objects_yielded % 1e5 == 0:
                         mb_read = bytes_read / (1024 * 1024)
                         print(
                             f"[info] Streamed {mb_read:.1f} MB, "
@@ -92,7 +93,8 @@ def dataframe_from_glob(
 ) -> pd.DataFrame:
     rows: List[Dict[str, Any]] = []
     for glob_expr in glob_exprs:
-        for path in sorted(Path().glob(glob_expr)):
+        for path_str in sorted(glob.glob(glob_expr)):
+            path = Path(path_str)
             if (
                 path.suffix.lower() not in {JSON_SUFFIX, ZIP_SUFFIX}
                 or not path.is_file()
