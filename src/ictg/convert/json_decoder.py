@@ -1,7 +1,6 @@
 import glob
 import io
 import json
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
@@ -10,7 +9,10 @@ import pandas as pd
 from pydantic import ValidationError
 
 from .file_reader import JSON_SUFFIX, ZIP_SUFFIX, open_json_stream
+from .logging_config import get_logger
 from .pydanticModels import PatientRecord, normalize_patient_record
+
+logger = get_logger()
 
 
 def _format_size(size_bytes: float) -> str:
@@ -57,31 +59,27 @@ class ProgressReporter:
         if total_bytes is not None:
             percent = (bytes_read / total_bytes) * 100
             if self.report_count <= self.FREQUENT_REPORTING_LIMIT:
-                print(
-                    f"[info] Streamed {_format_size(bytes_read)} of "
+                logger.info(
+                    f"Streamed {_format_size(bytes_read)} of "
                     f"{_format_size(total_bytes)} ({percent:.1f}%)"
-                    f", parsed {objects_yielded:,} JSON objects",
-                    file=sys.stderr,
+                    f", parsed {objects_yielded:,} JSON objects"
                 )
             else:
-                print(
-                    f"[info] Streamed {_format_size(bytes_read)} of "
+                logger.info(
+                    f"Streamed {_format_size(bytes_read)} of "
                     f"{_format_size(total_bytes)} ({percent:.1f}%) in {self.__elapsed_time()}"
-                    f", parsed {objects_yielded:,} JSON objects",
-                    file=sys.stderr,
+                    f", parsed {objects_yielded:,} JSON objects"
                 )
         else:
             if self.report_count <= self.FREQUENT_REPORTING_LIMIT:
-                print(
-                    f"[info] Streamed {_format_size(bytes_read)}"
-                    f", parsed {objects_yielded:,} JSON objects",
-                    file=sys.stderr,
+                logger.info(
+                    f"Streamed {_format_size(bytes_read)}"
+                    f", parsed {objects_yielded:,} JSON objects"
                 )
             else:
-                print(
-                    f"[info] Streamed {_format_size(bytes_read)} in {self.__elapsed_time()}"
-                    f", parsed {objects_yielded:,} JSON objects",
-                    file=sys.stderr,
+                logger.info(
+                    f"Streamed {_format_size(bytes_read)} in {self.__elapsed_time()}"
+                    f", parsed {objects_yielded:,} JSON objects"
                 )
 
         self.__warn_frequency_change()
@@ -116,10 +114,7 @@ class ProgressReporter:
     def __warn_frequency_change(self) -> None:
         """Warn about switching to less frequent updates."""
         if self.report_count == self.FREQUENT_REPORTING_LIMIT:
-            print(
-                "[info] Switching to less frequent progress updates",
-                file=sys.stderr,
-            )
+            logger.info("Switching to less frequent progress updates")
 
 
 def iter_concatenated_json(
@@ -155,9 +150,8 @@ def iter_concatenated_json(
                     )
                     yield obj
                 else:
-                    print(
-                        f"[warn] Skipping non-dict JSON object of type {type(obj).__name__}",
-                        file=sys.stderr,
+                    logger.warning(
+                        f"Skipping non-dict JSON object of type {type(obj).__name__}"
                     )
                 buf = s[end:]
             except ValueError:
@@ -168,16 +162,14 @@ def iter_concatenated_json(
             if buf.strip():
                 raise ValueError("Trailing incomplete/invalid JSON at end of stream.")
             if total_bytes is not None:
-                print(
-                    f"[info] Finished streaming: {_format_size(total_bytes)} processed, "
-                    f"{objects_yielded:,} JSON objects parsed",
-                    file=sys.stderr,
+                logger.info(
+                    f"Finished streaming: {_format_size(total_bytes)} processed, "
+                    f"{objects_yielded:,} JSON objects parsed"
                 )
             else:
-                print(
-                    f"[info] Finished streaming: {_format_size(bytes_read)} processed, "
-                    f"{objects_yielded:,} JSON objects parsed",
-                    file=sys.stderr,
+                logger.info(
+                    f"Finished streaming: {_format_size(bytes_read)} processed, "
+                    f"{objects_yielded:,} JSON objects parsed"
                 )
             return
 
@@ -214,7 +206,7 @@ def records_from_path(
                 yield PatientRecord.model_validate(obj)
             except ValidationError as e:
                 # Surface context but keep streaming
-                print(f"[warn] Validation error in {path.name}: {e}", file=sys.stderr)
+                logger.warning(f"Validation error in {path.name}: {e}")
                 continue
 
 
@@ -229,21 +221,18 @@ def dataframe_from_glob(
                 path.suffix.lower() not in {JSON_SUFFIX, ZIP_SUFFIX}
                 or not path.is_file()
             ):
-                print(f"[warn] Skipping unsupported file: {path}", file=sys.stderr)
+                logger.warning(f"Skipping unsupported file: {path}")
                 continue
 
-            print(f"[info] Processing file: {path.name}", file=sys.stderr)
+            logger.info(f"Processing file: {path.name}")
             for rec in records_from_path(path, member):
                 rows.append(normalize_patient_record(rec))
                 if len(rows) % 1000 == 0:
-                    print(
-                        f"[info] Processed {len(rows):,} records so far...",
-                        file=sys.stderr,
-                    )
+                    logger.info(f"Processed {len(rows):,} records so far...")
                 if limit is not None and len(rows) >= limit:
-                    print(f"[info] Reached limit of {limit:,} records", file=sys.stderr)
+                    logger.info(f"Reached limit of {limit:,} records")
                     df = pd.DataFrame(rows)
                     return df
-    print(f"[info] Total records processed: {len(rows):,}", file=sys.stderr)
+    logger.info(f"Total records processed: {len(rows):,}")
     df = pd.DataFrame(rows)
     return df

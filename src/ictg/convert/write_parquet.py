@@ -9,7 +9,10 @@ import questionary
 
 from .file_reader import JSON_SUFFIX, ZIP_SUFFIX
 from .json_decoder import records_from_path
+from .logging_config import get_logger
 from .pydanticModels import normalize_patient_record
+
+logger = get_logger()
 
 
 def write_parquet_per_input(
@@ -23,13 +26,14 @@ def write_parquet_per_input(
             path = Path(path_str)
             out_path = _get_output_path(path, out_dir)
             if out_path is None:
-                print(f"[warn] Skipping file: {path}")
+                logger.warning(f"Skipping file: {path}")
                 continue
 
-            print(f"Processing {path} -> {out_path}")
+            logger.info(f"Processing {path} -> {out_path}")
 
             writer: Optional[pq.ParquetWriter] = None
             batch: List[Dict[str, Any]] = []
+            total_records = 0
             try:
                 for rec in records_from_path(path, member):
                     batch.append(normalize_patient_record(rec))
@@ -38,15 +42,21 @@ def write_parquet_per_input(
                             batch, out_path, writer_container := {"writer": writer}
                         )
                         writer = writer_container["writer"]
+                        total_records += len(batch)
                         batch.clear()
                 if batch:
                     _flush_parquet_batch(
                         batch, out_path, writer_container := {"writer": writer}
                     )
                     writer = writer_container["writer"]
+                    total_records += len(batch)
             finally:
                 if writer is not None:
                     writer.close()
+                    logger.info(
+                        f"Completed {path.name}: wrote {total_records:,} total records "
+                        f"to {out_path}"
+                    )
 
 
 def _get_output_path(path: Path, out_dir: Path) -> Path | None:
@@ -60,7 +70,7 @@ def _get_output_path(path: Path, out_dir: Path) -> Path | None:
         ).ask()
         if should_remove:
             out_path.unlink()
-            print(f"Removed existing file: {out_path}")
+            logger.info(f"Removed existing file: {out_path}")
         else:
             return None
 
@@ -77,4 +87,6 @@ def _flush_parquet_batch(
     if writer is None:
         writer = pq.ParquetWriter(out_path.as_posix(), table.schema, compression="zstd")
         writer_container["writer"] = writer
+        logger.info(f"Created Parquet file: {out_path}")
     writer.write_table(table)
+    logger.debug(f"Flushed batch of {len(batch):,} records to {out_path}")
