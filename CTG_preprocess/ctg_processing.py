@@ -27,6 +27,13 @@ def format_patient_id(pn: str) -> str:
     return pn
 
 
+def _patient_bucket_from_id(patient_id: str, bucket_count: int) -> int | None:
+    digits = patient_id.replace("-", "")
+    if len(digits) >= 4 and digits[-4:].isdigit():
+        return int(digits[-4:]) % bucket_count
+    return None
+
+
 def _decode_toco_values(value: object) -> list[float]:
     if value is None:
         return [np.nan] * 4
@@ -140,6 +147,7 @@ def load_ctg_data(
     birth_day: date | None,
     sample_rate_hz: int = 4,
     downsample_mode: str = "mean",
+    bucket_count: int | None = None,
 ) -> pd.DataFrame | None:
     patient_id = format_patient_id(pn)
     if not patient_id:
@@ -161,6 +169,15 @@ def load_ctg_data(
         else ds.dataset(parquet_paths, format="parquet")
     )
     filter_expr = ds.field("PatientID") == patient_id
+
+    if bucket_count and "patient_bucket" in dataset.schema.names:
+        bucket = _patient_bucket_from_id(patient_id, bucket_count)
+        if bucket is not None:
+            filter_expr = filter_expr & (ds.field("patient_bucket") == bucket)
+
+    if birth_day is not None and "ctg_date" in dataset.schema.names:
+        date_values = [birth_day, birth_day - timedelta(days=1)]
+        filter_expr = filter_expr & ds.field("ctg_date").isin(date_values)
 
     if birth_day is not None and "Timestamp" in dataset.schema.names:
         ts_field = dataset.schema.field("Timestamp")

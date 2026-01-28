@@ -16,11 +16,35 @@ from config import (
     DEFAULT_OUTPUT_MODE,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PARQUET_PATHS,
+    DEFAULT_PARTITION_OUTPUT_DIR,
+    DEFAULT_PARTITION_BUCKETS,
+    DEFAULT_USE_PARTITIONED_DATASET,
     DEFAULT_PATIENT_CSV,
     DEFAULT_REPORT_EVERY,
     DEFAULT_SAMPLE_RATE_HZ,
 )
 from ctg_processing import filter_ctg_data, load_ctg_data
+
+DEFAULT_CTGSOURCE_PATHS = ([DEFAULT_PARTITION_OUTPUT_DIR] if DEFAULT_USE_PARTITIONED_DATASET else DEFAULT_PARQUET_PATHS)
+
+def _build_dataset(parquet_paths: str | Path | Iterable[str | Path]) -> ds.Dataset:
+    if isinstance(parquet_paths, (str, Path)):
+        return ds.dataset(str(parquet_paths), format="parquet")
+
+    paths = [Path(p) for p in parquet_paths]
+    if len(paths) == 1 and paths[0].is_dir():
+        return ds.dataset(str(paths[0]), format="parquet")
+
+    if any(p.is_dir() for p in paths):
+        expanded: list[Path] = []
+        for p in paths:
+            if p.is_dir():
+                expanded.extend(sorted(p.rglob("*.parquet")))
+            else:
+                expanded.append(p)
+        return ds.dataset([str(p) for p in expanded], format="parquet")
+
+    return ds.dataset([str(p) for p in paths], format="parquet")
 
 
 def _detect_delimiter(sample: str) -> str:
@@ -205,7 +229,7 @@ def process_patients(
     invalid_patients = 0
 
     next_baby_id = _get_next_baby_id(metadata_path)
-    dataset = ds.dataset(parquet_paths, format="parquet")
+    dataset = _build_dataset(parquet_paths)
 
     if output_mode == "append":
         output_path = output_dir / f"ctg_batch_{batch_id:04d}.parquet"
@@ -236,6 +260,7 @@ def process_patients(
             birth_day,
             sample_rate_hz=sample_rate_hz,
             downsample_mode=downsample_mode,
+            bucket_count=DEFAULT_PARTITION_BUCKETS,
         )
         if ctg_df is None:
             invalid_patients += 1
@@ -287,7 +312,7 @@ def main() -> None:
         "--parquet",
         type=str,
         nargs="+",
-        default=DEFAULT_PARQUET_PATHS,
+        default=DEFAULT_CTGSOURCE_PATHS,
         help="One or more parquet files with CTG data.",
     )
     parser.add_argument(
@@ -391,7 +416,7 @@ def main() -> None:
         )
         found = False
         valid_seen = 0
-        dataset = ds.dataset(args.parquet, format="parquet")
+        dataset = _build_dataset(args.parquet)
         for patient_index, patient in iter_patients(
             args.patient_csv, args.start, args.limit
         ):
@@ -406,6 +431,7 @@ def main() -> None:
                 patient.get("birth_day"),
                 sample_rate_hz=args.sample_rate,
                 downsample_mode=args.downsample_mode,
+                bucket_count=DEFAULT_PARTITION_BUCKETS,
             )
             if ctg_df is None:
                 continue

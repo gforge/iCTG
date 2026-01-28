@@ -7,6 +7,7 @@ Quick Start
   `uv run python main.py --process --start 1 --limit 1000 --batch-id 1 --output-dir output`
 
 Inputs (edit defaults in config.py)
+- Note: if DEFAULT_USE_PARTITIONED_DATASET is true, --parquet defaults to the partitioned output dir.
 - `--patient-csv PATH` Path to patient CSV (default from `DEFAULT_PATIENT_CSV` in code).
 - `--parquet PATH [PATH ...]` One or more CTG parquet files (default from `DEFAULT_PARQUET_PATHS`).
 
@@ -35,3 +36,11 @@ Test-only extras
 - `--plot` Save a plot of FHR + toco.
 - `--plot-out PATH` Output path for the plot image.
 - `--print-limit N` Number of rows to print from start/end of the filtered signal.
+
+Partitioning Step (recommended)
+- One-time preprocessing to speed up patient lookups by splitting CTG data by date and patient bucket.
+- Edit defaults in `config.py` (output dir, cutoff date, columns, bucket count).
+- Run:
+  `python partition_ctg.py --output-dir /path/to/ctg_partitioned`
+- Optional: `--report-every-batches 50` for progress updates
+- Then keep `DEFAULT_USE_PARTITIONED_DATASET = True` and set `DEFAULT_PARTITION_OUTPUT_DIR` in `config.py` (or pass `--parquet` at runtime).
