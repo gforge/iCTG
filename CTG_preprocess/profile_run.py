@@ -8,8 +8,10 @@ from config import (
     DEFAULT_DOWNSAMPLE_MODE,
     DEFAULT_PARQUET_PATHS,
     DEFAULT_PARTITION_BUCKETS,
+    DEFAULT_PARTITION_OUTPUT_DIR,
     DEFAULT_PATIENT_CSV,
     DEFAULT_SAMPLE_RATE_HZ,
+    DEFAULT_USE_PARTITIONED_DATASET,
 )
 from ctg_processing import filter_ctg_data, load_ctg_data
 from main import iter_patients, _build_dataset
@@ -51,6 +53,7 @@ def profile_run(
             sample_rate_hz=sample_rate,
             downsample_mode=downsample_mode,
             bucket_count=DEFAULT_PARTITION_BUCKETS,
+            partition_root=DEFAULT_PARTITION_OUTPUT_DIR if DEFAULT_USE_PARTITIONED_DATASET else None,
         )
         totals["load_ctg_s"] += time.perf_counter() - load_start
         if ctg_df is None:

@@ -44,3 +44,15 @@ Partitioning Step (recommended)
   `python partition_ctg.py --output-dir /path/to/ctg_partitioned`
 - Optional: `--report-every-batches 50` for progress updates
 - Then keep `DEFAULT_USE_PARTITIONED_DATASET = True` and set `DEFAULT_PARTITION_OUTPUT_DIR` in `config.py` (or pass `--parquet` at runtime).
+
+
+Reduction Stages
+- Run stage 1 (time filter):
+  `uv run python ctg_reduction.py --stage stage1`
+- Run stage 2 (column filter):
+  `uv run python ctg_reduction.py --stage stage2`
+- Stage 3 (session filter) is not implemented yet.
+- Final partitioning (after stage 3):
+  `uv run python ctg_reduction.py --stage partition`
+
+Set paths in `config.py` (DEFAULT_REDUCTION_ROOT, stage dirs, cutoff date).

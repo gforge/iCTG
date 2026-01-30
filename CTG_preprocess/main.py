@@ -28,12 +28,31 @@ from ctg_processing import filter_ctg_data, load_ctg_data
 DEFAULT_CTGSOURCE_PATHS = ([DEFAULT_PARTITION_OUTPUT_DIR] if DEFAULT_USE_PARTITIONED_DATASET else DEFAULT_PARQUET_PATHS)
 
 def _build_dataset(parquet_paths: str | Path | Iterable[str | Path]) -> ds.Dataset:
+    def _dataset_from_dir(dir_path: Path) -> ds.Dataset:
+        subdirs = [p.name for p in dir_path.iterdir() if p.is_dir()]
+        if any("=" in name for name in subdirs):
+            return ds.dataset(str(dir_path), format="parquet", partitioning="hive")
+
+        partitioning = ds.partitioning(
+            pa.schema(
+                [
+                    ("ctg_date", pa.string()),
+                    ("patient_bucket", pa.string()),
+                ]
+            ),
+            flavor="filename",
+        )
+        return ds.dataset(str(dir_path), format="parquet", partitioning=partitioning)
+
     if isinstance(parquet_paths, (str, Path)):
-        return ds.dataset(str(parquet_paths), format="parquet")
+        path = Path(parquet_paths)
+        if path.is_dir():
+            return _dataset_from_dir(path)
+        return ds.dataset(str(path), format="parquet", partitioning="hive")
 
     paths = [Path(p) for p in parquet_paths]
     if len(paths) == 1 and paths[0].is_dir():
-        return ds.dataset(str(paths[0]), format="parquet")
+        return _dataset_from_dir(paths[0])
 
     if any(p.is_dir() for p in paths):
         expanded: list[Path] = []
@@ -42,10 +61,9 @@ def _build_dataset(parquet_paths: str | Path | Iterable[str | Path]) -> ds.Datas
                 expanded.extend(sorted(p.rglob("*.parquet")))
             else:
                 expanded.append(p)
-        return ds.dataset([str(p) for p in expanded], format="parquet")
+        return ds.dataset([str(p) for p in expanded], format="parquet", partitioning="hive")
 
-    return ds.dataset([str(p) for p in paths], format="parquet")
-
+    return ds.dataset([str(p) for p in paths], format="parquet", partitioning="hive")
 
 def _detect_delimiter(sample: str) -> str:
     if sample.count(";") > sample.count(","):
@@ -261,6 +279,7 @@ def process_patients(
             sample_rate_hz=sample_rate_hz,
             downsample_mode=downsample_mode,
             bucket_count=DEFAULT_PARTITION_BUCKETS,
+            partition_root=DEFAULT_PARTITION_OUTPUT_DIR if DEFAULT_USE_PARTITIONED_DATASET else None,
         )
         if ctg_df is None:
             invalid_patients += 1
@@ -432,6 +451,7 @@ def main() -> None:
                 sample_rate_hz=args.sample_rate,
                 downsample_mode=args.downsample_mode,
                 bucket_count=DEFAULT_PARTITION_BUCKETS,
+                partition_root=DEFAULT_PARTITION_OUTPUT_DIR if DEFAULT_USE_PARTITIONED_DATASET else None,
             )
             if ctg_df is None:
                 continue

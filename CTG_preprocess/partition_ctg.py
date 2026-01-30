@@ -66,7 +66,9 @@ def partition_ctg(
             elif hasattr(pc, "modulus"):
                 bucket = pc.modulus(pid_int, bucket_count)
             else:
-                raise RuntimeError("pyarrow compute missing mod/modulus; upgrade pyarrow")
+                # Fallback: emulate modulo using divide/cast (requires positive ints).
+                q = pc.cast(pc.divide(pid_int, bucket_count), pa.int32())
+                bucket = pc.subtract(pid_int, pc.multiply(q, bucket_count))
             bucket = pc.fill_null(bucket, -1)
             bucket = pc.cast(bucket, pa.int16())
             batch = batch.append_column("ctg_date", ctg_date)

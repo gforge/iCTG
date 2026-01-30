@@ -34,6 +34,15 @@ def _patient_bucket_from_id(patient_id: str, bucket_count: int) -> int | None:
     return None
 
 
+def _partition_subdirs(base_dir: Path, birth_day: date, bucket: int) -> list[Path]:
+    paths = []
+    for day in (birth_day, birth_day - timedelta(days=1)):
+        day_dir = base_dir / day.isoformat() / str(bucket)
+        if day_dir.is_dir():
+            paths.append(day_dir)
+    return paths
+
+
 def _decode_toco_values(value: object) -> list[float]:
     if value is None:
         return [np.nan] * 4
@@ -148,6 +157,7 @@ def load_ctg_data(
     sample_rate_hz: int = 4,
     downsample_mode: str = "mean",
     bucket_count: int | None = None,
+    partition_root: str | Path | None = None,
 ) -> pd.DataFrame | None:
     patient_id = format_patient_id(pn)
     if not patient_id:
@@ -163,20 +173,55 @@ def load_ctg_data(
         "Toco_Values",
     ]
 
-    dataset = (
-        parquet_paths
-        if isinstance(parquet_paths, ds.Dataset)
-        else ds.dataset(parquet_paths, format="parquet")
-    )
-    filter_expr = ds.field("PatientID") == patient_id
-
-    if bucket_count and "patient_bucket" in dataset.schema.names:
+    if partition_root and bucket_count and birth_day is not None:
         bucket = _patient_bucket_from_id(patient_id, bucket_count)
         if bucket is not None:
+            base_dir = Path(partition_root)
+            subdirs = _partition_subdirs(base_dir, birth_day, bucket)
+            if subdirs:
+                files: list[Path] = []
+                for sub in subdirs:
+                    files.extend(sorted(sub.rglob("*.parquet")))
+                if not files:
+                    return None
+                dataset = ds.dataset([str(p) for p in files], format="parquet")
+            else:
+                return None
+        else:
+            return None
+    else:
+        dataset = (
+            parquet_paths
+            if isinstance(parquet_paths, ds.Dataset)
+            else ds.dataset(parquet_paths, format="parquet")
+        )
+    if dataset.schema is None or not dataset.schema.names:
+        return None
+
+    filter_expr = ds.field("PatientID") == patient_id
+
+    partition_fields = set()
+    partition_schema = None
+    if getattr(dataset, "partitioning", None) is not None:
+        partition_schema = getattr(dataset.partitioning, "schema", None)
+        if partition_schema is not None:
+            partition_fields = set(partition_schema.names)
+
+    if bucket_count and "patient_bucket" in partition_fields:
+        bucket = _patient_bucket_from_id(patient_id, bucket_count)
+        if bucket is not None:
+            if partition_schema is not None:
+                bucket_field = partition_schema.field("patient_bucket")
+                if pa.types.is_string(bucket_field.type):
+                    bucket = str(bucket)
             filter_expr = filter_expr & (ds.field("patient_bucket") == bucket)
 
-    if birth_day is not None and "ctg_date" in dataset.schema.names:
+    if birth_day is not None and "ctg_date" in partition_fields:
         date_values = [birth_day, birth_day - timedelta(days=1)]
+        if partition_schema is not None:
+            date_field = partition_schema.field("ctg_date")
+            if pa.types.is_string(date_field.type):
+                date_values = [d.isoformat() for d in date_values]
         filter_expr = filter_expr & ds.field("ctg_date").isin(date_values)
 
     if birth_day is not None and "Timestamp" in dataset.schema.names:

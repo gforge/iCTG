@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # CSV with patient metadata.
 DEFAULT_PATIENT_CSV = "/home/lukas-uggla/Documents/Data/gravniva.csv"
-# Parquet files with CTG data (can be absolute paths).
+# Raw parquet files with CTG data (can be absolute paths).
 DEFAULT_PARQUET_PATHS = [
     "/home/lukas-uggla/Documents/Data/Export_2025-05-22 10_14_42.parquet",
     "/home/lukas-uggla/Documents/Data/Export_2025-05-22 10_27_33.parquet",
@@ -36,23 +36,33 @@ DEFAULT_OUTPUT_MODE = "dataset"
 DEFAULT_MAX_BATCH_SIZE_GB = 5.0
 # Output directory path.
 DEFAULT_OUTPUT_DIR = "output"
+# Root directory for staged data reduction outputs.
+DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
+# Stage directories (derived from DEFAULT_REDUCTION_ROOT).
+DEFAULT_STAGE1_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_1_timefilter"
+DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
+DEFAULT_STAGE3_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_3_sessionfilter"
+DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_partitioned"
+
 # Progress report frequency (patients). Set to 0 to disable.
 DEFAULT_REPORT_EVERY = 1000
 
-# Partitioning defaults (for the one-time preprocessing step).
+# Stage 1 time cutoff (YYYY-MM-DD). Rows before this are dropped.
+DEFAULT_STAGE1_CUTOFF_DATE = "2014-12-31"
+
+# Partitioning defaults (final stage).
 # Where to write the partitioned dataset (can be absolute).
-DEFAULT_PARTITION_OUTPUT_DIR = "/home/lukas-uggla/Documents/Data/ctg_partitioned"
+#DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE4_DIR
+DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE4_DIR
 # Drop any CTG rows before this date (YYYY-MM-DD).
-DEFAULT_PARTITION_CUTOFF_DATE = "2014-12-24"
+DEFAULT_PARTITION_CUTOFF_DATE = DEFAULT_STAGE1_CUTOFF_DATE
 # Columns to keep in the partitioned dataset.
 DEFAULT_PARTITION_COLUMNS = [
     "PatientID",
     "Timestamp",
-    "Hr1_0",
-    "Hr1_1",
-    "Hr1_2",
-    "Hr1_3",
-    "Toco_Values",
+    "RegistrationID",
+    "FHR",
+    "toco",
 ]
 
 # Use the partitioned dataset for main processing by default.
