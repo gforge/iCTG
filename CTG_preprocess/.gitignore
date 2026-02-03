@@ -11,3 +11,6 @@ wheels/
 output/
 output_test/
 *.png
+test.py
+stage3_stats.py
+stage3_sanity_check.py

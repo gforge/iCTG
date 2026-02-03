@@ -20,6 +20,12 @@ from config import (
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
     DEFAULT_STAGE3_DIR,
+    DEFAULT_STAGE3_OUTPUT_FILE,
+    DEFAULT_STAGE3_GAP_MINUTES,
+    DEFAULT_STAGE3_PREG_GAP_DAYS,
+    DEFAULT_STAGE3_LAST_HOUR_MINUTES,
+    DEFAULT_BABYID_SALT,
+    DEFAULT_STAGE3_BUCKETS,
 )
 from partition_ctg import partition_ctg
 
@@ -75,7 +81,8 @@ def _compute_fhr(batch: pa.RecordBatch) -> pa.Array:
         sums = val if sums is None else pc.add(sums, val)
         counts = count if counts is None else pc.add(counts, count)
     has_vals = pc.greater(counts, 0)
-    fhr = pc.if_else(has_vals, pc.divide(sums, counts), 0)
+    safe_counts = pc.if_else(has_vals, counts, 1)
+    fhr = pc.if_else(has_vals, pc.divide(sums, safe_counts), 0)
     return pc.cast(fhr, pa.float32())
 
 
@@ -186,8 +193,166 @@ def stage2_columnfilter(
     )
 
 
-def stage3_sessionfilter(*_args, **_kwargs) -> None:
-    raise NotImplementedError("Stage 3 (session filter) is not implemented yet.")
+def stage3_sessionfilter(
+    input_dir: str | Path,
+    output_file: str | Path,
+    gap_minutes: int = DEFAULT_STAGE3_GAP_MINUTES,
+    preg_gap_days: int = DEFAULT_STAGE3_PREG_GAP_DAYS,
+    last_hour_minutes: int = DEFAULT_STAGE3_LAST_HOUR_MINUTES,
+    babyid_salt: str = DEFAULT_BABYID_SALT,
+    show_progress: bool = True,
+    bucket_count: int = DEFAULT_STAGE3_BUCKETS,
+    bucket_index: int | None = None,
+) -> None:
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError("DuckDB is required for stage3. Install it with pip/uv.") from exc
+
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        output_file.unlink()
+
+    con = duckdb.connect()
+    if show_progress:
+        try:
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
+        except Exception:
+            pass
+    try:
+        con.execute("SET preserve_insertion_order=false")
+    except Exception:
+        pass
+    safe_path = str(input_dir).replace("'", "''")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+
+    def _pick_hash_func() -> str:
+        for func in ("sha256", "md5"):
+            try:
+                con.execute(f"SELECT {func}('test')").fetchone()
+                return func
+            except Exception:
+                continue
+        return "md5"
+
+    hash_func = _pick_hash_func()
+    salt = babyid_salt.replace("'", "''")
+    babyid_expr = (
+        f"{hash_func}(concat('{salt}', '|', CAST(PatientID AS VARCHAR),"
+        f" '|', CAST(session_end AS VARCHAR)))"
+    )
+
+    def _build_query(extra_where: str) -> str:
+        where_clause = ("\n    WHERE " + extra_where) if extra_where else ""
+        return f"""
+WITH ordered AS (
+    SELECT
+        PatientID,
+        RegistrationID,
+        Timestamp,
+        FHR,
+        toco,
+        Timestamp - LAG(Timestamp) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS gap
+    FROM ctg{where_clause}
+),
+sessioned AS (
+    SELECT
+        *,
+        SUM(CASE WHEN gap IS NULL OR gap > INTERVAL '{gap_minutes} minutes'
+            THEN 1 ELSE 0 END
+        ) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS session_id
+    FROM ordered
+),
+session_end AS (
+    SELECT PatientID, session_id, MAX(Timestamp) AS session_end
+    FROM sessioned
+    GROUP BY PatientID, session_id
+),
+preg_sessions AS (
+    SELECT
+        PatientID,
+        session_id,
+        session_end,
+        SUM(CASE WHEN prev_end IS NULL OR session_end - prev_end > INTERVAL '{preg_gap_days} days'
+            THEN 1 ELSE 0 END
+        ) OVER (PARTITION BY PatientID ORDER BY session_end) AS pregnancy_id
+    FROM (
+        SELECT
+            *,
+            LAG(session_end) OVER (PARTITION BY PatientID ORDER BY session_end) AS prev_end
+        FROM session_end
+    )
+),
+final_sessions AS (
+    SELECT PatientID, pregnancy_id, MAX(session_end) AS session_end
+    FROM preg_sessions
+    GROUP BY PatientID, pregnancy_id
+),
+anchors AS (
+    SELECT
+        s.PatientID,
+        p.pregnancy_id,
+        s.session_id,
+        p.session_end,
+        MAX(s.Timestamp) FILTER (WHERE s.FHR > 0) AS last_nz_ts
+    FROM sessioned s
+    JOIN preg_sessions p
+      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
+    JOIN final_sessions f
+      ON p.PatientID = f.PatientID
+     AND p.pregnancy_id = f.pregnancy_id
+     AND p.session_end = f.session_end
+    GROUP BY s.PatientID, p.pregnancy_id, s.session_id, p.session_end
+),
+final_rows AS (
+    SELECT
+        s.PatientID,
+        s.RegistrationID,
+        s.Timestamp,
+        s.FHR,
+        s.toco,
+        a.session_end,
+        COALESCE(a.last_nz_ts, a.session_end) AS anchor_ts
+    FROM sessioned s
+    JOIN anchors a
+      ON s.PatientID = a.PatientID AND s.session_id = a.session_id
+    WHERE s.Timestamp BETWEEN COALESCE(a.last_nz_ts, a.session_end)
+        - INTERVAL '{last_hour_minutes} minutes'
+        AND COALESCE(a.last_nz_ts, a.session_end)
+)
+SELECT
+    {babyid_expr} AS BabyID,
+    PatientID,
+    RegistrationID,
+    Timestamp,
+    FHR,
+    toco
+FROM final_rows
+"""
+
+    def _bucket_expr() -> str:
+        return f"(CAST(right(PatientID, 4) AS INTEGER) % {bucket_count})"
+
+    output_path = Path(output_file)
+    if bucket_count and bucket_count > 1:
+        base_dir = output_path if output_path.suffix == "" else output_path.parent
+        base_dir.mkdir(parents=True, exist_ok=True)
+        prefix = output_path.stem if output_path.suffix else "stage3_sessions"
+        indices = [bucket_index] if bucket_index is not None else range(bucket_count)
+        for idx in indices:
+            out_path = base_dir / f"{prefix}_bucket_{idx:04d}.parquet"
+            print(f"Stage3 bucket {idx+1}/{bucket_count}: {out_path.name}")
+            if out_path.exists():
+                out_path.unlink()
+            query = _build_query(f"{_bucket_expr()} = {idx}")
+            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_path)])
+    else:
+        query = _build_query("")
+        if output_path.exists():
+            output_path.unlink()
+        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_path)])
 
 
 def main() -> None:
@@ -228,6 +393,50 @@ def main() -> None:
         default=DEFAULT_PARTITION_REPORT_EVERY,
         help="Progress report frequency in batches (0 to disable).",
     )
+
+    parser.add_argument(
+        "--gap-minutes",
+        type=int,
+        default=DEFAULT_STAGE3_GAP_MINUTES,
+        help="Stage3 session gap threshold (minutes).",
+    )
+    parser.add_argument(
+        "--preg-gap-days",
+        type=int,
+        default=DEFAULT_STAGE3_PREG_GAP_DAYS,
+        help="Stage3 pregnancy gap threshold (days).",
+    )
+    parser.add_argument(
+        "--last-hour-minutes",
+        type=int,
+        default=DEFAULT_STAGE3_LAST_HOUR_MINUTES,
+        help="Stage3 window length in minutes.",
+    )
+    parser.add_argument(
+        "--babyid-salt",
+        type=str,
+        default=DEFAULT_BABYID_SALT,
+        help="Salt used for BabyID hashing.",
+    )
+
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable DuckDB progress bar for stage3.",
+    )
+
+    parser.add_argument(
+        "--bucket-count",
+        type=int,
+        default=DEFAULT_STAGE3_BUCKETS,
+        help="Stage3: process in buckets (set to 1 to disable).",
+    )
+    parser.add_argument(
+        "--bucket-index",
+        type=int,
+        default=None,
+        help="Stage3: process a single bucket index (0..bucket-count-1).",
+    )
     args = parser.parse_args()
 
     if args.stage == "stage1":
@@ -250,7 +459,17 @@ def main() -> None:
         return
 
     if args.stage == "stage3":
-        stage3_sessionfilter()
+        stage3_sessionfilter(
+            input_dir=(args.input[0] if args.input else DEFAULT_STAGE2_DIR),
+            output_file=args.output or DEFAULT_STAGE3_OUTPUT_FILE,
+            gap_minutes=args.gap_minutes,
+            preg_gap_days=args.preg_gap_days,
+            last_hour_minutes=args.last_hour_minutes,
+            babyid_salt=args.babyid_salt,
+            show_progress=not args.no_progress,
+            bucket_count=args.bucket_count,
+            bucket_index=args.bucket_index,
+        )
         return
 
     if args.stage == "partition":

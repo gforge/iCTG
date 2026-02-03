@@ -44,6 +44,14 @@ DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
 DEFAULT_STAGE3_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_3_sessionfilter"
 DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_partitioned"
 
+DEFAULT_STAGE3_OUTPUT_FILE = f"{DEFAULT_STAGE3_DIR}/stage3_sessions.parquet"
+
+# Stage 3 session filter settings.
+DEFAULT_STAGE3_GAP_MINUTES = 5
+DEFAULT_STAGE3_PREG_GAP_DAYS = 200
+DEFAULT_STAGE3_LAST_HOUR_MINUTES = 60
+DEFAULT_BABYID_SALT = "VibeSaltTemp123"
+
 # Progress report frequency (patients). Set to 0 to disable.
 DEFAULT_REPORT_EVERY = 1000
 
@@ -71,3 +79,5 @@ DEFAULT_USE_PARTITIONED_DATASET = True
 DEFAULT_PARTITION_REPORT_EVERY = 50
 # Number of patient buckets to partition by (power of 2 recommended, e.g. 256).
 DEFAULT_PARTITION_BUCKETS = 256
+# Stage 3 bucketing (set >1 to process in smaller chunks and avoid OOM).
+DEFAULT_STAGE3_BUCKETS = 256
