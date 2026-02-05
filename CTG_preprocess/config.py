@@ -42,7 +42,14 @@ DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
 DEFAULT_STAGE1_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_1_timefilter"
 DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
 DEFAULT_STAGE3_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_3_sessionfilter"
-DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_partitioned"
+DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_duplicatefilter"
+DEFAULT_STAGE4_OUTPUT_FILE = f"{DEFAULT_STAGE4_DIR}/stage4_dedup.parquet"
+DEFAULT_STAGE4_DUP_THRESHOLD = 0.30
+DEFAULT_STAGE5_MIN_FHR_SECONDS = 1200
+DEFAULT_STAGE5_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_5_qualityfilter"
+DEFAULT_STAGE5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_quality.parquet"
+DEFAULT_STAGE5_5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_5_sorted.parquet"
+DEFAULT_STAGE6_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_6_partitioned"
 
 DEFAULT_STAGE3_OUTPUT_FILE = f"{DEFAULT_STAGE3_DIR}/stage3_sessions.parquet"
 
@@ -60,15 +67,15 @@ DEFAULT_STAGE1_CUTOFF_DATE = "2014-12-31"
 
 # Partitioning defaults (final stage).
 # Where to write the partitioned dataset (can be absolute).
-#DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE4_DIR
-DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE4_DIR
+#DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE6_DIR
+DEFAULT_PARTITION_OUTPUT_DIR = DEFAULT_STAGE6_DIR
 # Drop any CTG rows before this date (YYYY-MM-DD).
 DEFAULT_PARTITION_CUTOFF_DATE = DEFAULT_STAGE1_CUTOFF_DATE
 # Columns to keep in the partitioned dataset.
 DEFAULT_PARTITION_COLUMNS = [
+    "BabyID",
     "PatientID",
     "Timestamp",
-    "RegistrationID",
     "FHR",
     "toco",
 ]

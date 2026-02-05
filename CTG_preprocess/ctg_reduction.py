@@ -11,7 +11,6 @@ import pyarrow.dataset as ds
 
 from config import (
     DEFAULT_PARQUET_PATHS,
-    DEFAULT_PARTITION_BUCKETS,
     DEFAULT_PARTITION_COLUMNS,
     DEFAULT_PARTITION_OUTPUT_DIR,
     DEFAULT_PARTITION_REPORT_EVERY,
@@ -26,6 +25,13 @@ from config import (
     DEFAULT_STAGE3_LAST_HOUR_MINUTES,
     DEFAULT_BABYID_SALT,
     DEFAULT_STAGE3_BUCKETS,
+    DEFAULT_STAGE4_OUTPUT_FILE,
+    DEFAULT_STAGE4_DUP_THRESHOLD,
+    DEFAULT_STAGE5_DIR,
+    DEFAULT_STAGE5_OUTPUT_FILE,
+    DEFAULT_STAGE5_5_OUTPUT_FILE,
+    DEFAULT_STAGE5_MIN_FHR_SECONDS,
+    DEFAULT_STAGE6_DIR,
 )
 from partition_ctg import partition_ctg
 
@@ -354,13 +360,287 @@ FROM final_rows
             output_path.unlink()
         con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_path)])
 
+def stage4_duplicatefilter(
+    input_dir: str | Path,
+    output_file: str | Path,
+    dup_threshold: float = DEFAULT_STAGE4_DUP_THRESHOLD,
+    show_progress: bool = True,
+) -> None:
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError("DuckDB is required for stage4. Install it with pip/uv.") from exc
+
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        output_file.unlink()
+
+    con = duckdb.connect()
+    if show_progress:
+        try:
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
+        except Exception:
+            pass
+    try:
+        con.execute("SET preserve_insertion_order=false")
+    except Exception:
+        pass
+
+    safe_path = str(input_dir).replace("'", "''")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+
+    query = f"""
+    WITH ts_counts AS (
+        SELECT BabyID, Timestamp, COUNT(*) AS cnt
+        FROM ctg
+        GROUP BY BabyID, Timestamp
+    ),
+    per_baby AS (
+        SELECT
+            BabyID,
+            SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_ts,
+            COUNT(*) AS total_ts
+        FROM ts_counts
+        GROUP BY BabyID
+    ),
+    keep_baby AS (
+        SELECT BabyID
+        FROM per_baby
+        WHERE CASE WHEN total_ts = 0 THEN 0 ELSE dup_ts * 1.0 / total_ts END <= {dup_threshold}
+    ),
+    filtered AS (
+        SELECT c.*
+        FROM ctg c
+        JOIN keep_baby k USING (BabyID)
+    ),
+    agg AS (
+        SELECT
+            BabyID,
+            MIN(PatientID) AS PatientID,
+            Timestamp,
+            COALESCE(median(FHR) FILTER (WHERE FHR > 0), 0) AS FHR,
+            COALESCE(
+                median(toco) FILTER (WHERE toco BETWEEN 1 AND 99),
+                median(toco)
+            ) AS toco
+        FROM filtered
+        GROUP BY BabyID, Timestamp
+    )
+    SELECT * FROM agg
+    """
+
+    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+
+
+def stage5_qualityfilter(
+    input_dir: str | Path,
+    output_file: str | Path,
+    min_fhr_seconds: int = DEFAULT_STAGE5_MIN_FHR_SECONDS,
+    show_progress: bool = True,
+) -> None:
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError("DuckDB is required for stage5. Install it with pip/uv.") from exc
+
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        output_file.unlink()
+
+    con = duckdb.connect()
+    if show_progress:
+        try:
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
+        except Exception:
+            pass
+    try:
+        con.execute("SET preserve_insertion_order=false")
+    except Exception:
+        pass
+
+    safe_path = str(input_dir).replace("'", "''")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+
+    query = f"""
+    WITH per_baby AS (
+        SELECT
+            BabyID,
+            SUM(CASE WHEN FHR > 0 THEN 1 ELSE 0 END) AS fhr_nz
+        FROM ctg
+        GROUP BY BabyID
+    ),
+    keep AS (
+        SELECT BabyID
+        FROM per_baby
+        WHERE fhr_nz >= {min_fhr_seconds}
+    )
+    SELECT c.*
+    FROM ctg c
+    JOIN keep k USING (BabyID)
+    """
+
+    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+
+
+def stage6_partitioning(
+    input_path: str | Path,
+    output_dir: str | Path,
+    batch_size: int = 65536,
+    report_every_batches: int = DEFAULT_PARTITION_REPORT_EVERY,
+) -> None:
+    dataset = ds.dataset(str(input_path), format="parquet")
+    has_ctg_date = "ctg_date" in dataset.schema.names
+    if has_ctg_date:
+        columns = ["BabyID", "PatientID", "Timestamp", "FHR", "toco", "ctg_date"]
+    else:
+        columns = ["BabyID", "PatientID", "Timestamp", "FHR", "toco"]
+
+    scanner = dataset.scanner(columns=columns, batch_size=batch_size)
+
+    total_rows = None
+    try:
+        total_rows = dataset.count_rows()
+    except Exception:
+        total_rows = None
+    total_batches = None
+    if total_rows is not None and batch_size:
+        total_batches = (total_rows + batch_size - 1) // batch_size
+
+    anchor_babies = None
+    anchor_dates = None
+    if not has_ctg_date:
+        try:
+            import duckdb
+        except ImportError as exc:
+            raise RuntimeError("DuckDB is required for stage6 when ctg_date is missing.") from exc
+
+        con = duckdb.connect()
+        safe_path = str(input_path).replace("'", "''")
+        con.execute(f"CREATE VIEW ctg AS SELECT BabyID, Timestamp FROM read_parquet('{safe_path}')")
+        anchor_rows = con.execute(
+            "SELECT BabyID, CAST(MAX(Timestamp) AS DATE) AS anchor_date FROM ctg GROUP BY BabyID"
+        ).fetchall()
+        if not anchor_rows:
+            print("Stage6: no rows found in input.")
+            return
+        baby_type = dataset.schema.field("BabyID").type
+        anchor_babies = pa.array([r[0] for r in anchor_rows], type=baby_type)
+        anchor_dates = pa.array([r[1] for r in anchor_rows], type=pa.date32())
+    else:
+        print("Stage6: using ctg_date from input (sorted Stage 5.5 output).")
+
+    base_fields = [dataset.schema.field(name) for name in columns]
+    if has_ctg_date:
+        schema = pa.schema(base_fields)
+    else:
+        schema = pa.schema(base_fields + [
+            pa.field("ctg_date", pa.date32()),
+        ])
+
+    def batch_iter():
+        import time
+        start_time = time.perf_counter()
+        batches = 0
+        rows = 0
+        for batch in scanner.to_batches():
+            batches += 1
+            rows += batch.num_rows
+            if report_every_batches and batches % report_every_batches == 0:
+                elapsed = time.perf_counter() - start_time
+                rate = rows / elapsed if elapsed else 0.0
+                if total_batches:
+                    pct = batches / total_batches * 100.0
+                    print(
+                        f"Stage6: {batches}/{total_batches} batches ({pct:.1f}%) "
+                        f"{rows} rows ({rate:,.0f} rows/s)"
+                    )
+                else:
+                    print(f"Stage6: {batches} batches, {rows} rows ({rate:,.0f} rows/s)")
+            if not has_ctg_date:
+                baby = batch.column(batch.schema.get_field_index("BabyID"))
+                idx = pc.index_in(baby, value_set=anchor_babies)
+                ctg_date = pc.take(anchor_dates, idx)
+                ctg_date = pc.cast(ctg_date, pa.date32())
+                batch = batch.append_column("ctg_date", ctg_date)
+            yield batch
+        if report_every_batches:
+            elapsed = time.perf_counter() - start_time
+            rate = rows / elapsed if elapsed else 0.0
+            if total_batches:
+                print(
+                    f"Stage6 done: {batches}/{total_batches} batches "
+                    f"{rows} rows ({rate:,.0f} rows/s)"
+                )
+            else:
+                print(f"Stage6 done: {batches} batches, {rows} rows ({rate:,.0f} rows/s)")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    ds.write_dataset(
+        batch_iter(),
+        output_dir,
+        format="parquet",
+        partitioning=["ctg_date"],
+        existing_data_behavior="overwrite_or_ignore",
+        schema=schema,
+    )
+
+def stage5_5_sort(
+    input_file: str | Path,
+    output_file: str | Path,
+    show_progress: bool = True,
+) -> None:
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError("DuckDB is required for stage5.5. Install it with pip/uv.") from exc
+
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if output_file.exists():
+        output_file.unlink()
+
+    con = duckdb.connect()
+    if show_progress:
+        try:
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
+        except Exception:
+            pass
+    try:
+        con.execute("SET preserve_insertion_order=false")
+    except Exception:
+        pass
+
+    safe_path = str(input_file).replace("'", "''")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+
+    query = """
+    WITH anchors AS (
+        SELECT BabyID, CAST(MAX(Timestamp) AS DATE) AS ctg_date
+        FROM ctg
+        GROUP BY BabyID
+    )
+    SELECT c.BabyID, c.PatientID, c.Timestamp, c.FHR, c.toco, a.ctg_date
+    FROM ctg c
+    JOIN anchors a USING (BabyID)
+    ORDER BY a.ctg_date, c.BabyID, c.Timestamp
+    """
+
+    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CTG reduction stages.")
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["stage1", "stage2", "stage3", "partition"],
+        choices=["stage1", "stage2", "stage3", "stage4", "stage5", "stage5_5", "stage6", "partition"],
         required=True,
         help="Which stage to run.",
     )
@@ -422,7 +702,21 @@ def main() -> None:
     parser.add_argument(
         "--no-progress",
         action="store_true",
-        help="Disable DuckDB progress bar for stage3.",
+        help="Disable DuckDB progress bar for stage3/stage4.",
+    )
+
+    parser.add_argument(
+        "--dup-threshold",
+        type=float,
+        default=DEFAULT_STAGE4_DUP_THRESHOLD,
+        help="Stage4: drop BabyIDs with duplicate rate above this threshold.",
+    )
+
+    parser.add_argument(
+        "--min-fhr-seconds",
+        type=int,
+        default=DEFAULT_STAGE5_MIN_FHR_SECONDS,
+        help="Stage5: minimum number of non-zero FHR seconds to keep a BabyID.",
     )
 
     parser.add_argument(
@@ -472,15 +766,38 @@ def main() -> None:
         )
         return
 
-    if args.stage == "partition":
-        partition_ctg(
-            parquet_paths=[args.input[0]] if args.input else [DEFAULT_STAGE3_DIR],
+    if args.stage == "stage4":
+        stage4_duplicatefilter(
+            input_dir=(args.input[0] if args.input else DEFAULT_STAGE3_DIR),
+            output_file=args.output or DEFAULT_STAGE4_OUTPUT_FILE,
+            dup_threshold=args.dup_threshold,
+            show_progress=not args.no_progress,
+        )
+        return
+
+    if args.stage == "stage5":
+        stage5_qualityfilter(
+            input_dir=(args.input[0] if args.input else DEFAULT_STAGE4_OUTPUT_FILE),
+            output_file=args.output or DEFAULT_STAGE5_OUTPUT_FILE,
+            min_fhr_seconds=args.min_fhr_seconds,
+            show_progress=not args.no_progress,
+        )
+        return
+
+    if args.stage == "stage5_5":
+        stage5_5_sort(
+            input_file=(args.input[0] if args.input else DEFAULT_STAGE5_OUTPUT_FILE),
+            output_file=args.output or DEFAULT_STAGE5_5_OUTPUT_FILE,
+            show_progress=not args.no_progress,
+        )
+        return
+
+    if args.stage == "stage6" or args.stage == "partition":
+        stage6_partitioning(
+            input_path=(args.input[0] if args.input else DEFAULT_STAGE5_5_OUTPUT_FILE),
             output_dir=args.output or DEFAULT_PARTITION_OUTPUT_DIR,
-            cutoff_date=DEFAULT_STAGE1_CUTOFF_DATE,
-            columns=DEFAULT_PARTITION_COLUMNS,
             batch_size=args.batch_size,
             report_every_batches=args.report_every_batches,
-            bucket_count=DEFAULT_PARTITION_BUCKETS,
         )
         return
 
