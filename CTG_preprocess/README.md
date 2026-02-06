@@ -1,58 +1,54 @@
 CTG Preprocess
 
-Quick Start
-- Test mode (find first valid patient in a range):
-  `uv run python main.py --test-first-valid`
-- Full processing (writes metadata + parquet output):
-  `uv run python main.py --process --start 1 --limit 1000 --batch-id 1 --output-dir output`
+Overview
+- Main pipeline scripts:
+  - `ctg_reduction.py` for Stages 1–6 (+5.5)
+  - `registry_matching.py` for Stage 7
+- Optional utilities (sanity checks / plots) are in separate scripts.
 
-Inputs (edit defaults in config.py)
-- Note: if DEFAULT_USE_PARTITIONED_DATASET is true, --parquet defaults to the partitioned output dir.
-- `--patient-csv PATH` Path to patient CSV (default from `DEFAULT_PATIENT_CSV` in code).
-- `--parquet PATH [PATH ...]` One or more CTG parquet files (default from `DEFAULT_PARQUET_PATHS`).
+Configuration
+- Edit `config.py` for all paths and defaults.
+- Key outputs:
+  - Reduction root: `DEFAULT_REDUCTION_ROOT`
+  - Stage 7 outputs: `DEFAULT_STAGE7_REGISTRY_CSV`, `DEFAULT_STAGE7_CTG_PARQUET`
 
-Range / Chunking
-- `--start N` 1-based patient index to start from.
-- `--limit N` Number of patients to scan/process.
-
-Modes
-- `--test-first-valid` Scan a range and stop at the Nth valid patient.
-- `--process` Run full processing, write metadata + parquet output.
-
-Signal settings
-- `--sample-rate {1,4}` Process at 1 Hz or 4 Hz (default 1 Hz).
-- `--downsample-mode {mean,first}` How to reduce 4 samples/second to 1 Hz (default mean).
-- `--min-data FLOAT` Minimum fraction of valid data required (default 0.5).
-
-Output (edit defaults in config.py)
-- `--output-dir PATH` Directory for `metadata.csv` and parquet output (default from `DEFAULT_OUTPUT_DIR`).
-- `--batch-id N` Batch number for file naming.
-- `--output-mode {append,dataset}` Append to a batch file or write a new dataset file (default dataset).
-- `--max-batch-size-gb FLOAT` Auto-switch to dataset output when append file exceeds this size (default 5.0).
-- `--report-every N` Print progress every N patients.
-
-Test-only extras
-- `--valid-index N` Choose the Nth valid patient within the scan range.
-- `--plot` Save a plot of FHR + toco.
-- `--plot-out PATH` Output path for the plot image.
-- `--print-limit N` Number of rows to print from start/end of the filtered signal.
-
-Partitioning Step (recommended)
-- One-time preprocessing to speed up patient lookups by splitting CTG data by date and patient bucket.
-- Edit defaults in `config.py` (output dir, cutoff date, columns, bucket count).
-- Run:
-  `python partition_ctg.py --output-dir /path/to/ctg_partitioned`
-- Optional: `--report-every-batches 50` for progress updates
-- Then keep `DEFAULT_USE_PARTITIONED_DATASET = True` and set `DEFAULT_PARTITION_OUTPUT_DIR` in `config.py` (or pass `--parquet` at runtime).
-
-
-Reduction Stages
-- Run stage 1 (time filter):
+Stages 1–6 (+5.5)
+- Stage 1 (time filter):
   `uv run python ctg_reduction.py --stage stage1`
-- Run stage 2 (column filter):
+- Stage 2 (column filter):
   `uv run python ctg_reduction.py --stage stage2`
-- Stage 3 (session filter) is not implemented yet.
-- Final partitioning (after stage 3):
-  `uv run python ctg_reduction.py --stage partition`
+- Stage 3 (session filter):
+  `uv run python ctg_reduction.py --stage stage3`
+- Stage 4 (duplicate filter):
+  `uv run python ctg_reduction.py --stage stage4`
+- Stage 5 (quality filter):
+  `uv run python ctg_reduction.py --stage stage5`
+- Stage 5.5 (sort + add anchor date):
+  `uv run python ctg_reduction.py --stage stage5_5`
+- Stage 6 (partition by date):
+  `uv run python ctg_reduction.py --stage stage6`
 
-Set paths in `config.py` (DEFAULT_REDUCTION_ROOT, stage dirs, cutoff date).
+Stage 7 (Registry Matching)
+- Matches registry data to CTG and writes final anonymized outputs:
+  `uv run python registry_matching.py`
+- Outputs:
+  - `registry.csv` with BabyID, birth_day, apgar5
+  - `ctg_final.parquet` with BabyID, Timestamp, FHR, toco
+
+Plots (optional)
+- Plot a random BabyID with apgar:
+  `uv run python stage7_plot.py`
+- Plot a random BabyID with a specific apgar score:
+  `uv run python stage7_plot.py --apgar 9`
+
+Sanity / Summary (optional)
+- Stage summary across all outputs (fast by default):
+  `uv run python stage_summary.py`
+
+Notes on legacy scripts
+- Earlier experiments (e.g. `main.py`, `partition_ctg.py`, older sanity scripts) are kept for reference.
+- If you want a cleaner repo view, move them into a `legacy/` folder or add them to `.gitignore`.
+
+Legacy
+- Older experiments and scripts have been moved to `legacy/`.
+- Generated plots moved to `legacy/plots/`.

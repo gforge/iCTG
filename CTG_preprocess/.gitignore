@@ -18,3 +18,4 @@ stage3_dup_profile.py
 stage4_sanity_check.py
 stage5_sanity_check.py
 stage6_sanity_check.py
+stage_summary.py

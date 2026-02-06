@@ -18,24 +18,8 @@ DEFAULT_PARQUET_PATHS = [
     "/home/lukas-uggla/Documents/Data/Export_2025-06-08 11_07_58.parquet",
     "/home/lukas-uggla/Documents/Data/Export_2025-06-10 09_23_30.parquet"
 ]
-'''
-[
-    "../../../Data/Export_2025-05-22 10_27_33.parquet",
-    "../../../Data/Export_2025-06-08 11_07_58.parquet",
-]
-'''
 
-# Processing defaults
-# 1 Hz or 4 Hz sampling.
-DEFAULT_SAMPLE_RATE_HZ = 1
-# How to reduce 4 samples/sec to 1 Hz when sample rate is 1. (mean or first)
-DEFAULT_DOWNSAMPLE_MODE = "mean"
-# Output mode: "dataset" writes a new parquet file per run, "append" grows one file.
-DEFAULT_OUTPUT_MODE = "dataset"
-# Max size for append mode before auto-switching to dataset mode. (Probably not needed)
-DEFAULT_MAX_BATCH_SIZE_GB = 5.0
-# Output directory path.
-DEFAULT_OUTPUT_DIR = "output"
+
 # Root directory for staged data reduction outputs.
 DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
 # Stage directories (derived from DEFAULT_REDUCTION_ROOT).
@@ -50,6 +34,9 @@ DEFAULT_STAGE5_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_5_qualityfilter"
 DEFAULT_STAGE5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_quality.parquet"
 DEFAULT_STAGE5_5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_5_sorted.parquet"
 DEFAULT_STAGE6_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_6_partitioned"
+DEFAULT_STAGE7_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_7_registrymatching"
+DEFAULT_STAGE7_REGISTRY_CSV = f"{DEFAULT_STAGE7_DIR}/registry.csv"
+DEFAULT_STAGE7_CTG_PARQUET = f"{DEFAULT_STAGE7_DIR}/ctg_final.parquet"
 
 DEFAULT_STAGE3_OUTPUT_FILE = f"{DEFAULT_STAGE3_DIR}/stage3_sessions.parquet"
 
