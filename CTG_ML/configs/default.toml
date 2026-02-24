@@ -1,0 +1,41 @@
+[paths]
+ctg_parquet = "/home/lukas-uggla/Documents/Data/ML-training/CTG1/ctg_simple.parquet"
+registry_csv = "/home/lukas-uggla/Documents/Data/ML-training/CTG1/registry_simple.csv"
+artifacts_dir = "artifacts"
+
+[target]
+# Binary target: 1 = at risk, 0 = healthy
+at_risk_max_apgar = 6
+
+[split]
+train_fraction = 0.70
+val_fraction = 0.15
+test_fraction = 0.15
+random_seed = 42
+
+[baseline]
+logreg_c = 1.0
+max_iter = 2000
+
+[sequence]
+# Default first TCN experiment: last 20 minutes at 1 Hz = 1200 steps.
+window_minutes = 20
+sample_rate_hz = 1
+# If false, pregnancies with fewer than required samples are dropped.
+pad_short = false
+# Treat FHR=0 as missing and add a binary mask channel.
+treat_fhr_zero_as_missing = true
+include_fhr_missing_mask = true
+# Output directory for generated NPZ sequence files.
+output_dir = "artifacts/tcn_20m"
+# DuckDB chunk size for preprocessing progress/memory balance.
+chunk_vectors_per_batch = 64
+
+[tcn]
+learning_rate = 0.001
+batch_size = 32
+epochs = 10
+weight_decay = 0.0001
+dropout = 0.1
+channels = [32, 64, 64]
+kernel_size = 3
