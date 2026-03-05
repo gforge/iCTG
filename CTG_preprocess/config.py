@@ -25,6 +25,11 @@ DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
 # Stage directories (derived from DEFAULT_REDUCTION_ROOT).
 DEFAULT_STAGE1_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_1_timefilter"
 DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
+DEFAULT_STAGE2_EXTRA_COLUMNS = [
+    "Hr1_SignalQuality",
+    "Hr1Mode",
+    "TocoMode",
+]
 DEFAULT_STAGE3_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_3_sessionfilter"
 DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_duplicatefilter"
 DEFAULT_STAGE4_OUTPUT_FILE = f"{DEFAULT_STAGE4_DIR}/stage4_dedup.parquet"
@@ -65,6 +70,7 @@ DEFAULT_PARTITION_COLUMNS = [
     "Timestamp",
     "FHR",
     "toco",
+    *DEFAULT_STAGE2_EXTRA_COLUMNS,
 ]
 
 # Use the partitioned dataset for main processing by default.

@@ -115,3 +115,24 @@ dmypy.json
 
 # Data directory (uncomment if you want to ignore data files)
 data/*
+
+# Python venvs
+.venv/
+venv/
+**/.venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Temp / cache / data
+.tmp/
+**/.tmp/
+tmp/
+**/tmp/
+*.tmp
+
+**/.tmp/
+**/*.tmp
+**/.venv/

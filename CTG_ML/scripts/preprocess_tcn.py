@@ -16,6 +16,11 @@ def main() -> None:
     parser.add_argument("--output-dir", default=None, help="Override sequence output dir")
     parser.add_argument("--window-minutes", type=int, default=None, help="Override sequence window length")
     parser.add_argument("--pad-short", action="store_true", help="Left-pad short sequences instead of dropping")
+    parser.add_argument(
+        "--signals-only",
+        action="store_true",
+        help="Generate only the raw signal channels (FHR, toco) with no mask channels.",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -34,14 +39,18 @@ def main() -> None:
         sample_rate_hz=cfg.sequence.sample_rate_hz,
         pad_short=pad_short,
         treat_fhr_zero_as_missing=cfg.sequence.treat_fhr_zero_as_missing,
-        include_fhr_missing_mask=cfg.sequence.include_fhr_missing_mask,
+        include_fhr_missing_mask=(False if args.signals_only else cfg.sequence.include_fhr_missing_mask),
+        treat_toco_zero_as_missing=cfg.sequence.treat_toco_zero_as_missing,
+        include_toco_missing_mask=(False if args.signals_only else cfg.sequence.include_toco_missing_mask),
+        include_padding_mask=(False if args.signals_only else cfg.sequence.include_padding_mask),
         chunk_vectors_per_batch=cfg.sequence.chunk_vectors_per_batch,
     )
 
     print(
         f"Building TCN sequences: window={seq_cfg.window_minutes} min, "
         f"sample_rate={seq_cfg.sample_rate_hz} Hz, steps={seq_cfg.n_steps}, "
-        f"pad_short={seq_cfg.pad_short}, fhr_mask={seq_cfg.include_fhr_missing_mask}"
+        f"pad_short={seq_cfg.pad_short}, fhr_mask={seq_cfg.include_fhr_missing_mask}, "
+        f"toco_mask={seq_cfg.include_toco_missing_mask}, padding_mask={seq_cfg.include_padding_mask}"
     )
     print(f"Input parquet: {cfg.paths.ctg_parquet}")
     print(f"Splits csv:    {splits_path}")

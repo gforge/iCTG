@@ -16,11 +16,25 @@ class SequenceBuildConfig:
     pad_short: bool
     treat_fhr_zero_as_missing: bool
     include_fhr_missing_mask: bool
+    treat_toco_zero_as_missing: bool
+    include_toco_missing_mask: bool
+    include_padding_mask: bool
     chunk_vectors_per_batch: int = 64
 
     @property
     def n_steps(self) -> int:
         return int(self.window_minutes * 60 * self.sample_rate_hz)
+
+    @property
+    def channel_names(self) -> list[str]:
+        names = ["FHR", "toco"]
+        if self.include_fhr_missing_mask:
+            names.append("fhr_missing_mask")
+        if self.include_toco_missing_mask:
+            names.append("toco_missing_mask")
+        if self.include_padding_mask:
+            names.append("padding_mask")
+        return names
 
 
 @dataclass(frozen=True)
@@ -64,8 +78,9 @@ def _finalize_one_sequence(
     if cfg.treat_fhr_zero_as_missing:
         fhr_missing |= (fhr == 0.0)
 
-    # Keep non-finite toco as missing numerically (NaN), but no explicit mask channel by default.
     toco_missing = ~np.isfinite(toco)
+    if cfg.treat_toco_zero_as_missing:
+        toco_missing |= (toco == 0.0)
 
     fhr = fhr.astype(np.float32, copy=False)
     toco = toco.astype(np.float32, copy=False)
@@ -76,13 +91,18 @@ def _finalize_one_sequence(
     if raw_len < n_steps and not cfg.pad_short:
         return None, None, raw_len
 
-    channels = 2 + int(cfg.include_fhr_missing_mask)
-    seq = np.full((channels, n_steps), np.nan, dtype=np.float32)
+    channel_names = cfg.channel_names
+    channels = len(channel_names)
+    channel_index = {name: i for i, name in enumerate(channel_names)}
+    seq = np.zeros((channels, n_steps), dtype=np.float32)
+    seq[channel_index["FHR"], :] = np.nan
+    seq[channel_index["toco"], :] = np.nan
 
     if raw_len >= n_steps:
         fhr_tail = fhr[-n_steps:]
         toco_tail = toco[-n_steps:]
         fhr_missing_tail = fhr_missing[-n_steps:].astype(np.float32)
+        toco_missing_tail = toco_missing[-n_steps:].astype(np.float32)
         start = 0
     else:
         # Left-pad shorter sequences so the end of the sequence stays aligned to birth.
@@ -90,14 +110,21 @@ def _finalize_one_sequence(
         fhr_tail = fhr
         toco_tail = toco
         fhr_missing_tail = fhr_missing.astype(np.float32)
+        toco_missing_tail = toco_missing.astype(np.float32)
         start = pad
+        if cfg.include_padding_mask:
+            seq[channel_index["padding_mask"], :pad] = 1.0
         if cfg.include_fhr_missing_mask:
-            seq[2, :pad] = 1.0
+            seq[channel_index["fhr_missing_mask"], :pad] = 1.0
+        if cfg.include_toco_missing_mask:
+            seq[channel_index["toco_missing_mask"], :pad] = 1.0
 
-    seq[0, start:] = fhr_tail
-    seq[1, start:] = toco_tail
+    seq[channel_index["FHR"], start:] = fhr_tail
+    seq[channel_index["toco"], start:] = toco_tail
     if cfg.include_fhr_missing_mask:
-        seq[2, start:] = fhr_missing_tail
+        seq[channel_index["fhr_missing_mask"], start:] = fhr_missing_tail
+    if cfg.include_toco_missing_mask:
+        seq[channel_index["toco_missing_mask"], start:] = toco_missing_tail
 
     y = float(label_by_baby[baby_id])
     _ = apgar_by_baby  # reserved for future multi-class/regression outputs
@@ -115,7 +142,7 @@ def _process_split_chunked(
     label_by_baby = dict(zip(split_df["BabyID"], split_df["target"].astype(int), strict=True))
     apgar_by_baby = dict(zip(split_df["BabyID"], split_df["apgar5"].astype(int), strict=True))
 
-    channels = 2 + int(cfg.include_fhr_missing_mask)
+    channels = len(cfg.channel_names)
     X = np.full((total_babies, channels, cfg.n_steps), np.nan, dtype=np.float32)
     y = np.zeros((total_babies,), dtype=np.float32)
     baby_ids = np.empty((total_babies,), dtype=f"<U{int(split_df['BabyID'].str.len().max())}")
@@ -195,7 +222,7 @@ def _process_split_chunked(
         y=y.astype(np.float32),
         baby_ids=baby_ids,
         n_steps=np.array([cfg.n_steps], dtype=np.int32),
-        channels=np.array(["FHR", "toco"] + (["fhr_missing_mask"] if cfg.include_fhr_missing_mask else [])),
+        channels=np.array(cfg.channel_names),
     )
 
     row_arr = np.asarray(row_counts, dtype=np.int32) if row_counts else np.array([0], dtype=np.int32)

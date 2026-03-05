@@ -18,6 +18,7 @@ from config import (
     DEFAULT_STAGE1_CUTOFF_DATE,
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
+    DEFAULT_STAGE2_EXTRA_COLUMNS,
     DEFAULT_STAGE3_DIR,
     DEFAULT_STAGE3_OUTPUT_FILE,
     DEFAULT_STAGE3_GAP_MINUTES,
@@ -25,6 +26,7 @@ from config import (
     DEFAULT_STAGE3_LAST_HOUR_MINUTES,
     DEFAULT_BABYID_SALT,
     DEFAULT_STAGE3_BUCKETS,
+    DEFAULT_STAGE4_DIR,
     DEFAULT_STAGE4_OUTPUT_FILE,
     DEFAULT_STAGE4_DUP_THRESHOLD,
     DEFAULT_STAGE5_DIR,
@@ -33,11 +35,23 @@ from config import (
     DEFAULT_STAGE5_MIN_FHR_SECONDS,
     DEFAULT_STAGE6_DIR,
 )
-from partition_ctg import partition_ctg
 
 
 def _parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, "%Y-%m-%d")
+
+
+def _field_type_or_default(dataset: ds.Dataset, name: str, default_type: pa.DataType = pa.string()) -> pa.DataType:
+    if name in dataset.schema.names:
+        return dataset.schema.field(name).type
+    return default_type
+
+
+def _column_or_default(batch: pa.RecordBatch, name: str, value_type: pa.DataType) -> pa.Array:
+    idx = batch.schema.get_field_index(name)
+    if idx != -1:
+        return batch.column(idx)
+    return pa.nulls(batch.num_rows, type=value_type)
 
 
 def stage1_timefilter(
@@ -147,19 +161,18 @@ def stage2_columnfilter(
         "Hr1_2",
         "Hr1_3",
         "Toco_Values",
+        *[name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in dataset.schema.names],
     ]
     scanner = dataset.scanner(columns=columns, batch_size=batch_size)
-
-    reg_field = dataset.schema.field("RegistrationID") if "RegistrationID" in dataset.schema.names else None
-    reg_type = reg_field.type if reg_field is not None else pa.string()
 
     schema = pa.schema(
         [
             ("Timestamp", dataset.schema.field("Timestamp").type),
             ("PatientID", dataset.schema.field("PatientID").type),
-            ("RegistrationID", reg_type),
+            ("RegistrationID", _field_type_or_default(dataset, "RegistrationID")),
             ("FHR", pa.float32()),
             ("toco", pa.float32()),
+            *[(name, _field_type_or_default(dataset, name)) for name in DEFAULT_STAGE2_EXTRA_COLUMNS],
         ]
     )
 
@@ -174,16 +187,17 @@ def stage2_columnfilter(
 
             timestamp = batch.column(batch.schema.get_field_index("Timestamp"))
             patient_id = batch.column(batch.schema.get_field_index("PatientID"))
-            reg_idx = batch.schema.get_field_index("RegistrationID")
-            registration_id = (
-                batch.column(reg_idx) if reg_idx != -1 else pa.nulls(batch.num_rows)
-            )
+            registration_id = _column_or_default(batch, "RegistrationID", _field_type_or_default(dataset, "RegistrationID"))
 
             fhr = _compute_fhr(batch)
             toco = _compute_toco(batch)
+            extras = [
+                _column_or_default(batch, name, _field_type_or_default(dataset, name))
+                for name in DEFAULT_STAGE2_EXTRA_COLUMNS
+            ]
 
             yield pa.RecordBatch.from_arrays(
-                [timestamp, patient_id, registration_id, fhr, toco],
+                [timestamp, patient_id, registration_id, fhr, toco, *extras],
                 schema=schema,
             )
 
@@ -260,6 +274,9 @@ WITH ordered AS (
         Timestamp,
         FHR,
         toco,
+        Hr1_SignalQuality,
+        Hr1Mode,
+        TocoMode,
         Timestamp - LAG(Timestamp) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS gap
     FROM ctg{where_clause}
 ),
@@ -319,6 +336,9 @@ final_rows AS (
         s.Timestamp,
         s.FHR,
         s.toco,
+        s.Hr1_SignalQuality,
+        s.Hr1Mode,
+        s.TocoMode,
         a.session_end,
         COALESCE(a.last_nz_ts, a.session_end) AS anchor_ts
     FROM sessioned s
@@ -334,7 +354,10 @@ SELECT
     RegistrationID,
     Timestamp,
     FHR,
-    toco
+    toco,
+    Hr1_SignalQuality,
+    Hr1Mode,
+    TocoMode
 FROM final_rows
 """
 
@@ -371,25 +394,17 @@ def stage4_duplicatefilter(
     except ImportError as exc:
         raise RuntimeError("DuckDB is required for stage4. Install it with pip/uv.") from exc
 
-    output_file = Path(output_file)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    if output_file.exists():
-        output_file.unlink()
+    input_path = Path(input_dir)
+    input_files = sorted(input_path.rglob("*.parquet")) if input_path.is_dir() else [input_path]
+    input_files = [p for p in input_files if p.exists()]
+    if not input_files:
+        raise FileNotFoundError(f"No parquet files found for stage4 input: {input_dir}")
 
-    con = duckdb.connect()
-    if show_progress:
-        try:
-            con.execute("PRAGMA enable_progress_bar")
-            con.execute("PRAGMA progress_bar_time=5")
-        except Exception:
-            pass
-    try:
-        con.execute("SET preserve_insertion_order=false")
-    except Exception:
-        pass
-
-    safe_path = str(input_dir).replace("'", "''")
-    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = output_path.stem if output_path.suffix else "stage4_dedup"
+    for stale in output_path.parent.glob(f"{prefix}*.parquet"):
+        stale.unlink()
 
     query = f"""
     WITH ts_counts AS (
@@ -424,14 +439,36 @@ def stage4_duplicatefilter(
             COALESCE(
                 median(toco) FILTER (WHERE toco BETWEEN 1 AND 99),
                 median(toco)
-            ) AS toco
+            ) AS toco,
+            COALESCE(mode(Hr1_SignalQuality), MIN(Hr1_SignalQuality)) AS Hr1_SignalQuality,
+            COALESCE(mode(Hr1Mode), MIN(Hr1Mode)) AS Hr1Mode,
+            COALESCE(mode(TocoMode), MIN(TocoMode)) AS TocoMode
         FROM filtered
         GROUP BY BabyID, Timestamp
     )
     SELECT * FROM agg
     """
 
-    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+    total = len(input_files)
+    for idx, in_file in enumerate(input_files, start=1):
+        out_file = output_path.parent / f"{prefix}_{idx - 1:04d}.parquet"
+        con = duckdb.connect()
+        if show_progress:
+            try:
+                con.execute("PRAGMA enable_progress_bar")
+                con.execute("PRAGMA progress_bar_time=5")
+            except Exception:
+                pass
+        try:
+            con.execute("SET preserve_insertion_order=false")
+        except Exception:
+            pass
+
+        safe_path = str(in_file).replace("'", "''")
+        con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_file)])
+        con.close()
+        print(f"Stage4: {idx}/{total} buckets -> {out_file.name}")
 
 
 def stage5_qualityfilter(
@@ -494,10 +531,7 @@ def stage6_partitioning(
 ) -> None:
     dataset = ds.dataset(str(input_path), format="parquet")
     has_ctg_date = "ctg_date" in dataset.schema.names
-    if has_ctg_date:
-        columns = ["BabyID", "PatientID", "Timestamp", "FHR", "toco", "ctg_date"]
-    else:
-        columns = ["BabyID", "PatientID", "Timestamp", "FHR", "toco"]
+    columns = list(dataset.schema.names)
 
     scanner = dataset.scanner(columns=columns, batch_size=batch_size)
 
@@ -586,6 +620,7 @@ def stage6_partitioning(
         format="parquet",
         partitioning=["ctg_date"],
         existing_data_behavior="overwrite_or_ignore",
+        max_open_files=64,
         schema=schema,
     )
 
@@ -625,7 +660,7 @@ def stage5_5_sort(
         FROM ctg
         GROUP BY BabyID
     )
-    SELECT c.BabyID, c.PatientID, c.Timestamp, c.FHR, c.toco, a.ctg_date
+    SELECT c.*, a.ctg_date
     FROM ctg c
     JOIN anchors a USING (BabyID)
     ORDER BY a.ctg_date, c.BabyID, c.Timestamp
@@ -777,7 +812,7 @@ def main() -> None:
 
     if args.stage == "stage5":
         stage5_qualityfilter(
-            input_dir=(args.input[0] if args.input else DEFAULT_STAGE4_OUTPUT_FILE),
+            input_dir=(args.input[0] if args.input else DEFAULT_STAGE4_DIR),
             output_file=args.output or DEFAULT_STAGE5_OUTPUT_FILE,
             min_fhr_seconds=args.min_fhr_seconds,
             show_progress=not args.no_progress,

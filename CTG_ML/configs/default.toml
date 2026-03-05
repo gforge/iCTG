@@ -18,24 +18,46 @@ logreg_c = 1.0
 max_iter = 2000
 
 [sequence]
-# Default first TCN experiment: last 20 minutes at 1 Hz = 1200 steps.
-window_minutes = 20
+# Default first TCN experiment: last 60 minutes at 1 Hz = 3600 steps.
+window_minutes = 60
 sample_rate_hz = 1
 # If false, pregnancies with fewer than required samples are dropped.
-pad_short = false
+pad_short = true
 # Treat FHR=0 as missing and add a binary mask channel.
 treat_fhr_zero_as_missing = true
 include_fhr_missing_mask = true
+# Treat toco=0 as missing and add a binary mask channel.
+treat_toco_zero_as_missing = true
+include_toco_missing_mask = true
+# Separate padding mask channel (1 where left-padding was applied).
+include_padding_mask = true
 # Output directory for generated NPZ sequence files.
-output_dir = "artifacts/tcn_20m"
+output_dir = "artifacts/tcn_60m"
 # DuckDB chunk size for preprocessing progress/memory balance.
 chunk_vectors_per_batch = 64
 
 [tcn]
-learning_rate = 0.001
-batch_size = 32
-epochs = 10
+learning_rate = 0.0005
+batch_size = 128
+epochs = 20
 weight_decay = 0.0001
 dropout = 0.1
-channels = [32, 64, 64]
-kernel_size = 3
+# Deeper TCN than the initial prototype to increase temporal receptive field.
+channels = [32, 32, 64, 64, 64, 128, 128, 128]
+kernel_size = 7
+# Conservative early stopping on validation PR-AUC (won't trigger too quickly).
+early_stopping_enabled = true
+early_stopping_min_epochs = 10
+early_stopping_patience = 10
+early_stopping_min_delta = 0.0002
+# Training stabilizers / imbalance handling
+gradient_clip_norm = 1.0
+use_weighted_sampler = false
+use_balanced_batch_sampler = true
+balanced_min_positives_per_batch = 2
+disable_pos_weight_with_balanced_sampler = true
+# Training randomness control (for multi-seed comparisons)
+seed = 52
+deterministic = false
+# GPU speedup: uses autocast mixed precision on CUDA.
+use_amp = true

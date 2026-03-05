@@ -7,6 +7,7 @@ import duckdb
 
 from config import (
     DEFAULT_PATIENT_CSV,
+    DEFAULT_STAGE2_EXTRA_COLUMNS,
     DEFAULT_STAGE5_5_OUTPUT_FILE,
     DEFAULT_STAGE6_DIR,
     DEFAULT_STAGE7_CTG_PARQUET,
@@ -181,10 +182,16 @@ def registry_match(
         """
     )
 
+    s6_cols = {row[0] for row in con.execute("DESCRIBE SELECT * FROM s6").fetchall()}
+    keep_cols = ["BabyID", "Timestamp", "FHR", "toco"] + [
+        name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in s6_cols
+    ]
+    ctg_select = ", ".join(f"s6.{name}" for name in keep_cols)
+
     con.execute(
         f"""
         COPY (
-            SELECT s6.BabyID, s6.Timestamp, s6.FHR, s6.toco
+            SELECT {ctg_select}
             FROM s6
             JOIN matched_babies mb USING (BabyID)
         ) TO '{str(ctg_out).replace("'", "''")}'

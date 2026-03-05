@@ -18,3 +18,6 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Local notes
+docs/TCN_NOTES.md
