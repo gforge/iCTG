@@ -4,6 +4,8 @@ from __future__ import annotations
 
 # CSV with patient metadata.
 DEFAULT_PATIENT_CSV = "/home/lukas-uggla/Documents/Data/gravniva.csv"
+# SNQ registry data (Excel or CSV).
+DEFAULT_SNQ_FILE = "/home/lukas-uggla/Documents/Data/SNQ data.xlsx"
 # Raw parquet files with CTG data (can be absolute paths).
 DEFAULT_PARQUET_PATHS = [
     "/home/lukas-uggla/Documents/Data/Export_2025-05-22 10_14_42.parquet",

@@ -21,3 +21,6 @@ logs/
 
 # Local notes
 docs/TCN_NOTES.md
+
+# Testing scripts
+generate_synthetic_tcn_data.py
