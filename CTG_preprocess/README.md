@@ -1,54 +1,60 @@
-CTG Preprocess
+# CTG Preprocess
 
-Overview
-- Main pipeline scripts:
-  - `ctg_reduction.py` for Stages 1–6 (+5.5)
-  - `registry_matching.py` for Stage 7
-- Optional utilities (sanity checks / plots) are in separate scripts.
+Pipeline for reducing raw CTG parquet data, matching the reduced CTG cohort to registry data, and writing anonymized final outputs.
 
-Configuration
-- Edit `config.py` for all paths and defaults.
-- Key outputs:
-  - Reduction root: `DEFAULT_REDUCTION_ROOT`
-  - Stage 7 outputs: `DEFAULT_STAGE7_REGISTRY_CSV`, `DEFAULT_STAGE7_CTG_PARQUET`
+## Main scripts
 
-Stages 1–6 (+5.5)
-- Stage 1 (time filter):
-  `uv run python ctg_reduction.py --stage stage1`
-- Stage 2 (column filter):
-  `uv run python ctg_reduction.py --stage stage2`
-- Stage 3 (session filter):
-  `uv run python ctg_reduction.py --stage stage3`
-- Stage 4 (duplicate filter):
-  `uv run python ctg_reduction.py --stage stage4`
-- Stage 5 (quality filter):
-  `uv run python ctg_reduction.py --stage stage5`
-- Stage 5.5 (sort + add anchor date):
-  `uv run python ctg_reduction.py --stage stage5_5`
-- Stage 6 (partition by date):
-  `uv run python ctg_reduction.py --stage stage6`
+- `ctg_reduction.py`: Stages 1-6 of CTG reduction.
+- `registry_matching.py`: Stage 7 registry matching and anonymized export.
+- `config.py`: all input paths, output paths, and stage settings.
 
-Stage 7 (Registry Matching)
-- Matches registry data to CTG and writes final anonymized outputs:
-  `uv run python registry_matching.py`
-- Outputs:
-  - `registry.csv` with BabyID, birth_day, apgar5
-  - `ctg_final.parquet` with BabyID, Timestamp, FHR, toco
+## Environment
 
-Plots (optional)
-- Plot a random BabyID with apgar:
-  `uv run python stage7_plot.py`
-- Plot a random BabyID with a specific apgar score:
-  `uv run python stage7_plot.py --apgar 9`
+This project is run with `uv` and Python 3.12.
 
-Sanity / Summary (optional)
-- Stage summary across all outputs (fast by default):
-  `uv run python stage_summary.py`
+Install dependencies:
 
-Notes on legacy scripts
-- Earlier experiments (e.g. `main.py`, `partition_ctg.py`, older sanity scripts) are kept for reference.
-- If you want a cleaner repo view, move them into a `legacy/` folder or add them to `.gitignore`.
+```bash
+uv sync
+```
 
-Legacy
-- Older experiments and scripts have been moved to `legacy/`.
-- Generated plots moved to `legacy/plots/`.
+If you prefer `pip`, install from `requirements.txt`.
+
+## Configuration
+
+Edit `config.py` before running the pipeline.
+
+Important paths:
+- `DEFAULT_PARQUET_PATHS`: raw CTG parquet files
+- `DEFAULT_PATIENT_CSV`: main registry file (`gravniva.csv`)
+- `DEFAULT_SNQ_FILE`: SNQ registry file
+- `DEFAULT_REDUCTION_ROOT`: root directory for Stage 1-7 outputs
+
+## Pipeline
+
+Run the stages in order:
+
+```bash
+uv run python ctg_reduction.py --stage stage1
+uv run python ctg_reduction.py --stage stage2
+uv run python ctg_reduction.py --stage stage3
+uv run python ctg_reduction.py --stage stage4
+uv run python ctg_reduction.py --stage stage5
+uv run python ctg_reduction.py --stage stage5_5
+uv run python ctg_reduction.py --stage stage6
+uv run python registry_matching.py
+```
+
+## Outputs
+
+Main final outputs are written under `DEFAULT_STAGE7_DIR`:
+- `registry.csv`: matched registry metadata, one row per `BabyID`
+- `ctg_final.parquet`: anonymized CTG data linked by `BabyID`
+
+Intermediate outputs for each stage are written under `DEFAULT_REDUCTION_ROOT`.
+
+## Notes
+
+- Stage 7 supports SNQ input as `.xlsx`, `.xls`, or `.csv`.
+- Legacy experiments and old scripts are kept in `legacy/`.
+- Local analysis utilities and generated artifacts are not part of the main pipeline.

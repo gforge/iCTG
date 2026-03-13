@@ -19,3 +19,9 @@ stage4_sanity_check.py
 stage5_sanity_check.py
 stage6_sanity_check.py
 stage_summary.py
+registry_meta_analysis.py
+registry_profile_report.py
+stage7_plot.png
+stage7_registry_data_dictionary.generated.md
+registry_meta_analysis.xlsx
+registry_column_profile.md
