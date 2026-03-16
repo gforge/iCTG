@@ -7,6 +7,7 @@ __pycache__/
 
 # Local outputs
 artifacts/
+artifacts_ctg2/
 runs/
 checkpoints/
 logs/

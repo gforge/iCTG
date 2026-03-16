@@ -82,3 +82,77 @@ class TCNBinaryClassifier(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (batch, channels=2, time)
         return self.head(self.tcn(x)).squeeze(-1)
+
+
+class TCNEncoder(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        channels: list[int] | tuple[int, ...],
+        kernel_size: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        layers: list[nn.Module] = []
+        prev = in_channels
+        for i, ch in enumerate(channels):
+            layers.append(
+                TemporalBlock(
+                    in_channels=prev,
+                    out_channels=ch,
+                    kernel_size=kernel_size,
+                    dilation=2**i,
+                    dropout=dropout,
+                )
+            )
+            prev = ch
+        self.tcn = nn.Sequential(*layers)
+        self.pool = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+        )
+        self.out_dim = prev
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(self.tcn(x))
+
+
+class MultimodalMultitaskTCN(nn.Module):
+    def __init__(
+        self,
+        sequence_in_channels: int,
+        tabular_in_features: int,
+        tcn_channels: list[int] | tuple[int, ...],
+        kernel_size: int,
+        dropout: float,
+        tabular_hidden_dim: int,
+        fusion_hidden_dim: int,
+        num_regression_outputs: int,
+        num_binary_outputs: int,
+    ) -> None:
+        super().__init__()
+        self.sequence_encoder = TCNEncoder(
+            in_channels=sequence_in_channels,
+            channels=tcn_channels,
+            kernel_size=kernel_size,
+            dropout=dropout,
+        )
+        self.tabular_encoder = nn.Sequential(
+            nn.Linear(tabular_in_features, tabular_hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        fusion_in = self.sequence_encoder.out_dim + tabular_hidden_dim
+        self.fusion = nn.Sequential(
+            nn.Linear(fusion_in, fusion_hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        self.regression_head = nn.Linear(fusion_hidden_dim, num_regression_outputs)
+        self.binary_head = nn.Linear(fusion_hidden_dim, num_binary_outputs)
+
+    def forward(self, x_seq: torch.Tensor, x_tab: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        seq_embed = self.sequence_encoder(x_seq)
+        tab_embed = self.tabular_encoder(x_tab)
+        fused = self.fusion(torch.cat([seq_embed, tab_embed], dim=1))
+        return self.regression_head(fused), self.binary_head(fused)

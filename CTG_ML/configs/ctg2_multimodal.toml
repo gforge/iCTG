@@ -1,0 +1,90 @@
+[paths]
+ctg_parquet = "/home/lukas-uggla/Documents/Data/ML-training/CTG2/ctg_final.parquet"
+registry_csv = "/home/lukas-uggla/Documents/Data/ML-training/CTG2/registry_final.csv"
+artifacts_dir = "artifacts_ctg2"
+
+[split]
+train_fraction = 0.70
+val_fraction = 0.15
+test_fraction = 0.15
+random_seed = 42
+
+[sequence]
+window_minutes = 60
+sample_rate_hz = 1
+pad_short = true
+treat_fhr_zero_as_missing = true
+treat_toco_zero_as_missing = true
+include_padding_mask = true
+include_signal_quality_channels = true
+quality_levels = ["G", "Y", "R"]
+output_dir = "artifacts_ctg2/tcn_multimodal_60m"
+chunk_vectors_per_batch = 64
+
+[registry]
+# Inputs kept post-CTG-encoder and concatenated with the pooled sequence embedding.
+# The fields below are excluded by default because they would leak post-birth information.
+input_numeric = [
+  "maternal_age",
+  "para_mhv1",
+  "langd_inskrivning_cm",
+  "bmi_inskrivning",
+  "alkohol_audit_poang",
+]
+input_boolean = [
+  "is_smoker",
+  "diabetes_mellitus",
+  "is_girl",
+  "gestational_hypertension_without_significant_proteinuria",
+  "preeclampsia",
+  "gestational_or_pregestational_diabetes",
+  "heavy_vaginal_bleeding_before_or_during_delivery",
+  "labor_dystocia",
+  "use_of_oxytocin",
+]
+input_categorical = [
+  "forlossningsstart",
+  "fodelseland",
+  "utbildningsniva",
+  "tobak_3_manader_fore_graviditet",
+  "tobak_inskrivning",
+  "tobak_vecka_30_32",
+]
+input_excluded_due_to_leakage = [
+  "etablerade_varkar_seconds",
+  "ph_navelartar",
+  "ph_navelven",
+  "ph_navel_below7",
+]
+categorical_other_min_frequency = 50
+country_top_k = 15
+regression_outputs = ["apgar1", "apgar5", "apgar10"]
+binary_outputs = [
+  "shoulder_dystocia",
+  "treatment_for_hypoglycemia",
+  "neonatal_sepsis_or_pneumonia",
+  "respiratorbehandling",
+]
+
+[model]
+tcn_channels = [32, 32, 64, 64, 64, 128, 128, 128]
+kernel_size = 7
+dropout = 0.1
+tabular_hidden_dim = 64
+fusion_hidden_dim = 128
+
+[train]
+learning_rate = 0.0005
+batch_size = 128
+epochs = 20
+weight_decay = 0.0001
+regression_loss_weight = 1.0
+binary_loss_weight = 1.0
+gradient_clip_norm = 1.0
+use_amp = true
+seed = 42
+deterministic = false
+early_stopping_enabled = true
+early_stopping_min_epochs = 8
+early_stopping_patience = 8
+early_stopping_min_delta = 0.0005

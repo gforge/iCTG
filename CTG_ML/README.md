@@ -58,6 +58,29 @@ uv run python scripts/preprocess_tcn.py
 uv run python scripts/train_tcn.py
 ```
 
+## CTG2 Multimodal Version
+
+The new CTG2 pipeline keeps the TCN sequence encoder but adds registry/tabular inputs after the pooled CTG embedding and predicts multiple outputs at once.
+
+Default config:
+
+- `configs/ctg2_multimodal.toml`
+
+Workflow:
+
+```bash
+uv run python scripts/make_splits_ctg2.py --config configs/ctg2_multimodal.toml
+uv run python scripts/preprocess_ctg2_multimodal.py --config configs/ctg2_multimodal.toml
+uv run python scripts/train_ctg2_multimodal.py --config configs/ctg2_multimodal.toml
+```
+
+Design notes:
+
+- CTG inputs: `FHR`, `toco`, one-hot `Hr1_SignalQuality` channels, and `padding_mask`
+- Registry inputs: numeric/boolean/categorical columns encoded into a dense tabular vector
+- Outputs: regression heads for `apgar1`, `apgar5`, `apgar10` and binary heads for selected neonatal outcomes
+- Some registry fields that would leak post-birth information are excluded by default in `configs/ctg2_multimodal.toml`
+
 ## Notes
 
 - Splits are created on `BabyID`, so no pregnancy leaks across train/val/test.
