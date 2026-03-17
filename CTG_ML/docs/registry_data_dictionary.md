@@ -249,7 +249,7 @@ In the descriptions below:
 - Source: `gravniva.csv`
 - Raw variable: `ph_navelartar`
 - Description: Umbilical artery pH. Ranges from 6.58 to 8.23. 
-- ML-use: Used as input
+- ML-use: Used as output
 - Prevalance: 60.1%
 
 ### `ph_navelven`
@@ -257,7 +257,7 @@ In the descriptions below:
 - Source: `gravniva.csv`
 - Raw variable: `ph_navelven`
 - Description: Umbilical vein pH. Ranges from 6.19 to 7.83. 95% of cases are above 7.17.
-- ML-use: Used as input
+- ML-use: Used as output
 - Prevalance: 69.5%
 
 ### `ph_navel_below7`
@@ -265,7 +265,7 @@ In the descriptions below:
 - Source: derived from `gravniva.csv`
 - Description: Indicator for low umbilical pH.
 - Derivation: Evaluated first on `ph_navelartar`; if arterial pH is missing, `ph_navelven` is used instead. Set to `True` when the available pH is below 7, otherwise `False`. Missing if neither pH is available.
-- ML-use: Used as input, but risky due to very few true samples.
+- ML-use: Used as output, but risky due to very few true samples.
 - Prevalance: 73.2% non-missing. False 72.59%, True 0.65%
 
 ### `avled_datum`

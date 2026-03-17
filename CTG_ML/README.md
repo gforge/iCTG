@@ -78,7 +78,7 @@ Design notes:
 
 - CTG inputs: `FHR`, `toco`, one-hot `Hr1_SignalQuality` channels, and `padding_mask`
 - Registry inputs: numeric/boolean/categorical columns encoded into a dense tabular vector
-- Outputs: regression heads for `apgar1`, `apgar5`, `apgar10` and binary heads for selected neonatal outcomes
+- Outputs: Apgar class heads (`0-10`), continuous pH heads, and binary heads for selected neonatal outcomes
 - Some registry fields that would leak post-birth information are excluded by default in `configs/ctg2_multimodal.toml`
 
 ## Notes

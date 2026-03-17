@@ -42,7 +42,8 @@ class CTG2RegistryConfig:
     input_excluded_due_to_leakage: list[str]
     categorical_other_min_frequency: int
     country_top_k: int
-    regression_outputs: list[str]
+    apgar_outputs: list[str]
+    continuous_outputs: list[str]
     binary_outputs: list[str]
 
 
@@ -129,7 +130,8 @@ def load_ctg2_config(path: str | Path = "configs/ctg2_multimodal.toml") -> CTG2P
             input_excluded_due_to_leakage=[str(x) for x in registry["input_excluded_due_to_leakage"]],
             categorical_other_min_frequency=int(registry["categorical_other_min_frequency"]),
             country_top_k=int(registry["country_top_k"]),
-            regression_outputs=[str(x) for x in registry["regression_outputs"]],
+            apgar_outputs=[str(x) for x in registry["apgar_outputs"]],
+            continuous_outputs=[str(x) for x in registry["continuous_outputs"]],
             binary_outputs=[str(x) for x in registry["binary_outputs"]],
         ),
         model=CTG2ModelConfig(

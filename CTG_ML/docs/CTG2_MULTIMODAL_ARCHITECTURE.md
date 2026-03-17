@@ -1,28 +1,31 @@
 # CTG2 Multimodal Architecture
 
-This file describes the current CTG2 model from `configs/ctg2_multimodal.toml`, `src/ctg_ml/models.py`, and the CTG2 preprocessing scripts.
+This file describes the current CTG2 model from `configs/ctg2_multimodal.toml`, `src/ctg_ml/models.py`, and the CTG2 preprocessing/training scripts.
 
 ## Current Config Snapshot
 
 - CTG sequence length: `3600` timesteps (`60 min * 60 s * 1 Hz`)
-- CTG channels: `6`
+- CTG channels: `5`
   - `FHR`
   - `toco`
-  - `Hr1_SignalQuality==G`
   - `Hr1_SignalQuality==Y`
   - `Hr1_SignalQuality==R`
   - `padding_mask`
-- Registry/tabular input width: `72` features after encoding
+- Registry/tabular input width: `74` features after encoding
 - TCN channels: `[32, 32, 64, 64, 64, 128, 128, 128]`
 - Kernel size: `7`
 - Dropout: `0.1`
 - Tabular hidden size: `64`
 - Fusion hidden size: `128`
-- Regression outputs: `3`
+- Apgar heads: `3 x 11-class`
   - `apgar1`
   - `apgar5`
   - `apgar10`
-- Binary outputs: `4`
+- Continuous regression heads: `2`
+  - `ph_navelartar`
+  - `ph_navelven`
+- Binary heads: `5`
+  - `ph_navel_below7`
   - `shoulder_dystocia`
   - `treatment_for_hypoglycemia`
   - `neonatal_sepsis_or_pneumonia`
@@ -32,7 +35,7 @@ This file describes the current CTG2 model from `configs/ctg2_multimodal.toml`, 
 
 ```mermaid
 flowchart LR
-    A["CTG sequence<br/>(B, 6, 3600)"] --> B0["TCN Block 0<br/>6 -> 32<br/>dilation=1"]
+    A["CTG sequence<br/>(B, 5, 3600)"] --> B0["TCN Block 0<br/>5 -> 32<br/>dilation=1"]
     B0 --> B1["Block 1<br/>32 -> 32<br/>dilation=2"]
     B1 --> B2["Block 2<br/>32 -> 64<br/>dilation=4"]
     B2 --> B3["Block 3<br/>64 -> 64<br/>dilation=8"]
@@ -43,17 +46,19 @@ flowchart LR
     B7 --> P["AdaptiveAvgPool1d(1)<br/>(B, 128, 1)"]
     P --> F["Flatten<br/>(B, 128)"]
 
-    T["Registry inputs<br/>(B, 72)"] --> TE["Tabular MLP<br/>Linear 72 -> 64<br/>ReLU + Dropout"]
+    T["Registry inputs<br/>(B, 74)"] --> TE["Tabular MLP<br/>Linear 74 -> 64<br/>ReLU + Dropout"]
 
     F --> C["Concatenate<br/>(B, 128 + 64 = 192)"]
     TE --> C
 
     C --> FU["Fusion MLP<br/>Linear 192 -> 128<br/>ReLU + Dropout"]
-    FU --> RH["Regression head<br/>Linear 128 -> 3"]
-    FU --> BH["Binary head<br/>Linear 128 -> 4"]
+    FU --> AH["Apgar head<br/>Linear 128 -> 33<br/>reshape to (3,11)"]
+    FU --> RH["Continuous head<br/>Linear 128 -> 2"]
+    FU --> BH["Binary head<br/>Linear 128 -> 5"]
 
-    RH --> RO["Regression outputs<br/>apgar1, apgar5, apgar10"]
-    BH --> BO["Binary logits<br/>4 neonatal outcomes"]
+    AH --> AO["Apgar class logits<br/>3 tasks x 11 scores"]
+    RH --> RO["Continuous outputs<br/>ph_navelartar, ph_navelven"]
+    BH --> BO["Binary logits<br/>5 neonatal outcomes"]
 ```
 
 ## Block Structure
@@ -81,7 +86,7 @@ flowchart TD
 
 | Stage | Shape |
 |---|---|
-| CTG input | `(B, 6, 3600)` |
+| CTG input | `(B, 5, 3600)` |
 | After Block 0 | `(B, 32, 3600)` |
 | After Block 1 | `(B, 32, 3600)` |
 | After Block 2 | `(B, 64, 3600)` |
@@ -91,12 +96,13 @@ flowchart TD
 | After Block 6 | `(B, 128, 3600)` |
 | After Block 7 | `(B, 128, 3600)` |
 | Pooled CTG embedding | `(B, 128)` |
-| Tabular input | `(B, 72)` |
+| Tabular input | `(B, 74)` |
 | Tabular embedding | `(B, 64)` |
 | Concatenated fusion vector | `(B, 192)` |
 | Fusion hidden vector | `(B, 128)` |
-| Regression outputs | `(B, 3)` |
-| Binary logits | `(B, 4)` |
+| Apgar logits | `(B, 3, 11)` |
+| Continuous outputs | `(B, 2)` |
+| Binary logits | `(B, 5)` |
 
 ## What Each Part Does
 
@@ -112,45 +118,57 @@ flowchart TD
 - Numeric fields are median-imputed and standardized, with missing flags.
 - Boolean fields become `0/1` plus missing flags.
 - Categorical fields become one-hot features plus missing and `other` buckets.
-- A single dense layer maps the 72 registry features into a 64-dimensional embedding.
+- A single dense layer maps the 74 registry features into a 64-dimensional embedding.
 
 ### Fusion stage
 
 - Concatenates the CTG embedding and registry embedding.
 - Learns interactions between the two modalities in a dense hidden layer.
 
-### Output heads
+### Apgar head
 
-- Regression head predicts exact Apgar scores.
-- Binary head predicts 4 separate neonatal outcomes in parallel.
-- Training uses masked losses so missing output labels do not contribute to loss.
+- Each Apgar target is treated as an 11-class classification task (`0` to `10`).
+- This keeps the difference between scores like `0`, `3`, and `6` visible during training.
+- At evaluation time, binary risk for `<7` is derived by summing class probabilities `0..6`.
+
+### Continuous head
+
+- Predicts exact `ph_navelartar` and `ph_navelven` values.
+- These outputs mainly act as auxiliary training signals.
+
+### Binary head
+
+- Predicts the direct binary neonatal outcomes in parallel.
+- Training uses masked losses so missing labels do not contribute to loss.
 
 ## Losses
 
-- Regression: masked smooth L1 loss on `apgar1`, `apgar5`, `apgar10`
-- Binary: masked binary cross-entropy with per-output `pos_weight`
+- Apgar head: masked cross-entropy
+- Continuous head: masked smooth L1 loss
+- Binary head: masked binary cross-entropy with per-output `pos_weight`
 - Total loss:
 
 ```text
-total_loss = regression_weight * regression_loss + binary_weight * binary_loss
+total_loss = apgar_loss + continuous_weight * continuous_loss + binary_weight * binary_loss
 ```
 
 Current weights from config:
 
-- `regression_weight = 1.0`
+- `continuous_weight = 1.0`
 - `binary_weight = 1.0`
 
 ## Important Project-Specific Choices
 
 These are not required by TCNs in general. They are current choices for this project:
 
-- registry inputs are fused **after** temporal pooling, not before
+- registry inputs are fused after temporal pooling, not before
 - one shared TCN encoder is used for all tasks
 - one shared tabular encoder is used for all tasks
 - all outputs share the same fusion representation
-- Apgar scores are treated as regression targets, not ordinal or binary targets
+- Apgar scores are trained as discrete classes, not raw regression targets
+- Apgar `<7` is derived at evaluation time from the Apgar class probabilities
 - outputs with missing labels are masked rather than forced to negative
-- `Hr1_SignalQuality` is encoded as one-hot channels instead of a learned embedding
+- `Hr1_SignalQuality` is encoded with two channels (`Y`, `R`), with `G` as the implicit baseline
 
 ## Minimal Mental Model
 
@@ -158,5 +176,5 @@ These are not required by TCNs in general. They are current choices for this pro
 CTG over 60 min -> TCN encoder -> CTG summary
 Registry row -> tabular encoder -> registry summary
 CTG summary + registry summary -> fusion layer
-fusion layer -> regression head + binary head
+fusion layer -> Apgar class head + continuous head + binary head
 ```

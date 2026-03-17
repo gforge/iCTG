@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from ctg_ml.ctg2_config import CTG2RegistryConfig, CTG2SequenceConfig
 from ctg_ml.ctg2_registry import (
-    LEAKAGE_WARNING,
     MultitaskTargetSpec,
     build_targets,
     fit_tabular_encoder,
@@ -112,11 +111,14 @@ def _build_split_npz(
     split_df: pd.DataFrame,
     seq_cfg: CTG2SequenceConfig,
     tab_X: np.ndarray,
+    apgar_targets: np.ndarray,
+    apgar_mask: np.ndarray,
     reg_targets: np.ndarray,
     reg_mask: np.ndarray,
     bin_targets: np.ndarray,
     bin_mask: np.ndarray,
     feature_names: list[str],
+    apgar_names: list[str],
     regression_names: list[str],
     binary_names: list[str],
     out_path: Path,
@@ -129,6 +131,8 @@ def _build_split_npz(
 
     X_seq = np.full((total_babies, len(channel_names), n_steps), np.nan, dtype=np.float32)
     X_tab = np.zeros((total_babies, tab_X.shape[1]), dtype=np.float32)
+    y_apgar = np.zeros((total_babies, apgar_targets.shape[1]), dtype=np.int64)
+    y_apgar_mask = np.zeros((total_babies, apgar_mask.shape[1]), dtype=np.float32)
     y_reg = np.zeros((total_babies, reg_targets.shape[1]), dtype=np.float32)
     y_reg_mask = np.zeros((total_babies, reg_mask.shape[1]), dtype=np.float32)
     y_bin = np.zeros((total_babies, bin_targets.shape[1]), dtype=np.float32)
@@ -152,6 +156,8 @@ def _build_split_npz(
         src = row_index[baby_id]
         X_seq[kept] = seq
         X_tab[kept] = tab_X[src]
+        y_apgar[kept] = apgar_targets[src]
+        y_apgar_mask[kept] = apgar_mask[src]
         y_reg[kept] = reg_targets[src]
         y_reg_mask[kept] = reg_mask[src]
         y_bin[kept] = bin_targets[src]
@@ -191,6 +197,8 @@ def _build_split_npz(
         out_path,
         X_seq=X_seq[:kept],
         X_tab=X_tab[:kept],
+        y_apgar=y_apgar[:kept],
+        y_apgar_mask=y_apgar_mask[:kept],
         y_reg=y_reg[:kept],
         y_reg_mask=y_reg_mask[:kept],
         y_bin=y_bin[:kept],
@@ -198,6 +206,7 @@ def _build_split_npz(
         baby_ids=baby_ids[:kept],
         sequence_channels=np.array(channel_names),
         tabular_feature_names=np.array(feature_names),
+        apgar_target_names=np.array(apgar_names),
         regression_target_names=np.array(regression_names),
         binary_target_names=np.array(binary_names),
         n_steps=np.array([n_steps], dtype=np.int32),
@@ -227,7 +236,13 @@ def build_ctg2_multimodal_npz_files(
     seq_cfg: CTG2SequenceConfig,
     registry_cfg: CTG2RegistryConfig,
 ) -> list[CTG2SplitBuildStats]:
-    print(LEAKAGE_WARNING)
+    if registry_cfg.input_excluded_due_to_leakage:
+        print(
+            "The following registry inputs are excluded by default because they are unavailable "
+            "at real prediction time or contain direct post-birth information: "
+            + ", ".join(registry_cfg.input_excluded_due_to_leakage)
+            + "."
+        )
     splits_df = pd.read_csv(splits_csv, usecols=["BabyID", "split"])
     registry_df = load_registry_for_multimodal(str(registry_csv), registry_cfg)
     merged = merge_splits_with_registry(splits_df, registry_df)
@@ -237,19 +252,20 @@ def build_ctg2_multimodal_npz_files(
         raise ValueError(f"Merged split/registry table missing columns: {sorted(missing)}")
 
     target_spec = MultitaskTargetSpec(
-        regression_names=list(registry_cfg.regression_outputs),
+        apgar_names=list(registry_cfg.apgar_outputs),
+        continuous_names=list(registry_cfg.continuous_outputs),
         binary_names=list(registry_cfg.binary_outputs),
     )
 
     train_df = merged[merged["split"] == "train"].copy()
     encoder = fit_tabular_encoder(train_df, registry_cfg)
 
-    split_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]] = {}
+    split_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]] = {}
     for split_name in ["train", "val", "test"]:
         split_part = merged[merged["split"] == split_name].copy().sort_values("BabyID").reset_index(drop=True)
         X_tab = transform_tabular_inputs(split_part, encoder)
-        y_reg, y_reg_mask, y_bin, y_bin_mask = build_targets(split_part, target_spec)
-        split_arrays[split_name] = (X_tab, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part)
+        y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = build_targets(split_part, target_spec)
+        split_arrays[split_name] = (X_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part)
 
     train_X_tab = split_arrays["train"][0]
     other_tabs = [split_arrays["val"][0], split_arrays["test"][0]]
@@ -258,7 +274,7 @@ def build_ctg2_multimodal_npz_files(
     out_dir = Path(output_dir)
     stats: list[CTG2SplitBuildStats] = []
     for split_name in ["train", "val", "test"]:
-        X_tab, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part = split_arrays[split_name]
+        X_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part = split_arrays[split_name]
         out_path = out_dir / f"{split_name}.npz"
         stats.append(
             _build_split_npz(
@@ -266,12 +282,15 @@ def build_ctg2_multimodal_npz_files(
                 split_df=split_part,
                 seq_cfg=seq_cfg,
                 tab_X=X_tab,
+                apgar_targets=y_apgar,
+                apgar_mask=y_apgar_mask,
                 reg_targets=y_reg,
                 reg_mask=y_reg_mask,
                 bin_targets=y_bin,
                 bin_mask=y_bin_mask,
                 feature_names=encoder.feature_names,
-                regression_names=target_spec.regression_names,
+                apgar_names=target_spec.apgar_names,
+                regression_names=target_spec.continuous_names,
                 binary_names=target_spec.binary_names,
                 out_path=out_path,
             )

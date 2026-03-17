@@ -20,16 +20,9 @@ class TabularEncoder:
 
 @dataclass(frozen=True)
 class MultitaskTargetSpec:
-    regression_names: list[str]
+    apgar_names: list[str]
+    continuous_names: list[str]
     binary_names: list[str]
-
-
-LEAKAGE_WARNING = (
-    "The following registry inputs are excluded by default because they are unavailable "
-    "at real prediction time or contain direct post-birth information: "
-    "etablerade_varkar_seconds, ph_navelartar, ph_navelven, ph_navel_below7."
-)
-
 
 def _clean_boolean_series(series: pd.Series) -> pd.Series:
     if series.dtype == bool:
@@ -58,14 +51,15 @@ def load_registry_for_multimodal(
     usecols += registry_cfg.input_boolean
     usecols += registry_cfg.input_categorical
     usecols += registry_cfg.input_excluded_due_to_leakage
-    usecols += registry_cfg.regression_outputs
+    usecols += registry_cfg.apgar_outputs
+    usecols += registry_cfg.continuous_outputs
     usecols += registry_cfg.binary_outputs
     df = pd.read_csv(registry_csv, usecols=sorted(set(usecols)))
     if df["BabyID"].duplicated().any():
         dupes = int(df["BabyID"].duplicated().sum())
         raise ValueError(f"registry_final.csv contains {dupes} duplicate BabyID rows")
 
-    for col in registry_cfg.input_numeric + registry_cfg.regression_outputs:
+    for col in registry_cfg.input_numeric + registry_cfg.apgar_outputs + registry_cfg.continuous_outputs:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -206,10 +200,19 @@ def normalize_tabular_inplace(
 def build_targets(
     df: pd.DataFrame,
     target_spec: MultitaskTargetSpec,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    reg_targets = np.zeros((len(df), len(target_spec.regression_names)), dtype=np.float32)
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    apgar_targets = np.zeros((len(df), len(target_spec.apgar_names)), dtype=np.int64)
+    apgar_mask = np.zeros((len(df), len(target_spec.apgar_names)), dtype=np.float32)
+    for idx, col in enumerate(target_spec.apgar_names):
+        vals = pd.to_numeric(df[col], errors="coerce")
+        present = vals.notna().to_numpy()
+        clipped = vals.clip(lower=0, upper=10)
+        apgar_targets[:, idx] = clipped.fillna(0).astype(int).to_numpy(dtype=np.int64)
+        apgar_mask[:, idx] = present.astype(np.float32)
+
+    reg_targets = np.zeros((len(df), len(target_spec.continuous_names)), dtype=np.float32)
     reg_mask = np.zeros_like(reg_targets, dtype=np.float32)
-    for idx, col in enumerate(target_spec.regression_names):
+    for idx, col in enumerate(target_spec.continuous_names):
         vals = pd.to_numeric(df[col], errors="coerce")
         present = vals.notna().to_numpy()
         reg_targets[:, idx] = vals.fillna(0.0).to_numpy(dtype=np.float32)
@@ -223,7 +226,7 @@ def build_targets(
         bin_targets[:, idx] = vals.fillna(False).astype(np.float32).to_numpy()
         bin_mask[:, idx] = present.astype(np.float32)
 
-    return reg_targets, reg_mask, bin_targets, bin_mask
+    return apgar_targets, apgar_mask, reg_targets, reg_mask, bin_targets, bin_mask
 
 
 def merge_splits_with_registry(

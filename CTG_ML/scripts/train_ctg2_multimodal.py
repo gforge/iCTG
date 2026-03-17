@@ -50,12 +50,15 @@ class MultimodalNPZDataset(Dataset):
         data = np.load(path, allow_pickle=False)
         self.X_seq = data["X_seq"].astype(np.float32)
         self.X_tab = data["X_tab"].astype(np.float32)
+        self.y_apgar = data["y_apgar"].astype(np.int64)
+        self.y_apgar_mask = data["y_apgar_mask"].astype(np.float32)
         self.y_reg = data["y_reg"].astype(np.float32)
         self.y_reg_mask = data["y_reg_mask"].astype(np.float32)
         self.y_bin = data["y_bin"].astype(np.float32)
         self.y_bin_mask = data["y_bin_mask"].astype(np.float32)
         self.sequence_channels = [str(x) for x in data["sequence_channels"].tolist()]
         self.tabular_feature_names = [str(x) for x in data["tabular_feature_names"].tolist()]
+        self.apgar_target_names = [str(x) for x in data["apgar_target_names"].tolist()]
         self.regression_target_names = [str(x) for x in data["regression_target_names"].tolist()]
         self.binary_target_names = [str(x) for x in data["binary_target_names"].tolist()]
         if len(self.X_seq) != len(self.X_tab):
@@ -68,6 +71,8 @@ class MultimodalNPZDataset(Dataset):
         return (
             torch.from_numpy(self.X_seq[idx]),
             torch.from_numpy(self.X_tab[idx]),
+            torch.from_numpy(self.y_apgar[idx]),
+            torch.from_numpy(self.y_apgar_mask[idx]),
             torch.from_numpy(self.y_reg[idx]),
             torch.from_numpy(self.y_reg_mask[idx]),
             torch.from_numpy(self.y_bin[idx]),
@@ -91,25 +96,42 @@ def compute_signal_stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarray) -> None:
     for ch in range(min(2, X.shape[1])):
-        finite = np.isfinite(X[:, ch, :])
-        X[:, ch, :][finite] = (X[:, ch, :][finite] - means[ch]) / stds[ch]
-        X[:, ch, :][~finite] = 0.0
+        channel = X[:, ch, :]
+        finite = np.isfinite(channel)
+        channel[finite] = (channel[finite] - means[ch]) / stds[ch]
+        channel[~finite] = 0.0
+        X[:, ch, :] = channel
     if X.shape[1] > 2:
-        X[:, 2:, :][~np.isfinite(X[:, 2:, :])] = 0.0
+        masks = X[:, 2:, :]
+        masks[~np.isfinite(masks)] = 0.0
+        X[:, 2:, :] = masks
 
 
 def masked_multitask_loss(
+    apgar_logits: torch.Tensor,
     reg_pred: torch.Tensor,
     bin_logits: torch.Tensor,
+    y_apgar: torch.Tensor,
+    y_apgar_mask: torch.Tensor,
     y_reg: torch.Tensor,
     y_reg_mask: torch.Tensor,
     y_bin: torch.Tensor,
     y_bin_mask: torch.Tensor,
     pos_weight: torch.Tensor,
-    regression_weight: float,
+    continuous_weight: float,
     binary_weight: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    reg_loss_raw = F.smooth_l1_loss(reg_pred / 10.0, y_reg / 10.0, reduction="none")
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    apgar_loss_total = torch.tensor(0.0, device=apgar_logits.device)
+    apgar_terms = 0.0
+    for idx in range(apgar_logits.shape[1]):
+        valid = y_apgar_mask[:, idx] > 0
+        if valid.any():
+            ce = F.cross_entropy(apgar_logits[valid, idx, :], y_apgar[valid, idx], reduction="mean")
+            apgar_loss_total = apgar_loss_total + ce
+            apgar_terms += 1.0
+    apgar_loss = apgar_loss_total / max(apgar_terms, 1.0)
+
+    reg_loss_raw = F.smooth_l1_loss(reg_pred, y_reg, reduction="none")
     reg_denom = y_reg_mask.sum().clamp_min(1.0)
     reg_loss = (reg_loss_raw * y_reg_mask).sum() / reg_denom
 
@@ -122,8 +144,8 @@ def masked_multitask_loss(
     bin_denom = y_bin_mask.sum().clamp_min(1.0)
     bin_loss = (bin_loss_raw * y_bin_mask).sum() / bin_denom
 
-    total = (regression_weight * reg_loss) + (binary_weight * bin_loss)
-    return total, reg_loss.detach(), bin_loss.detach()
+    total = apgar_loss + (continuous_weight * reg_loss) + (binary_weight * bin_loss)
+    return total, apgar_loss.detach(), reg_loss.detach(), bin_loss.detach()
 
 
 @torch.no_grad()
@@ -133,14 +155,18 @@ def evaluate_dataset(
     device: torch.device,
     use_amp: bool,
     pos_weight: torch.Tensor,
-    regression_weight: float,
+    continuous_weight: float,
     binary_weight: float,
+    apgar_names: list[str],
     regression_names: list[str],
     binary_names: list[str],
 ) -> dict[str, object]:
     model.eval()
     total_loss = 0.0
     total_items = 0
+    apgar_logits_all: list[np.ndarray] = []
+    apgar_true_all: list[np.ndarray] = []
+    apgar_mask_all: list[np.ndarray] = []
     reg_preds: list[np.ndarray] = []
     reg_true: list[np.ndarray] = []
     reg_mask: list[np.ndarray] = []
@@ -148,29 +174,38 @@ def evaluate_dataset(
     bin_true: list[np.ndarray] = []
     bin_mask: list[np.ndarray] = []
 
-    for x_seq, x_tab, y_reg, y_reg_mask, y_bin, y_bin_mask in loader:
+    for batch in loader:
+        x_seq, x_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
         x_seq = x_seq.to(device, non_blocking=(device.type == "cuda"))
         x_tab = x_tab.to(device, non_blocking=(device.type == "cuda"))
+        y_apgar = y_apgar.to(device, non_blocking=(device.type == "cuda"))
+        y_apgar_mask = y_apgar_mask.to(device, non_blocking=(device.type == "cuda"))
         y_reg = y_reg.to(device, non_blocking=(device.type == "cuda"))
         y_reg_mask = y_reg_mask.to(device, non_blocking=(device.type == "cuda"))
         y_bin = y_bin.to(device, non_blocking=(device.type == "cuda"))
         y_bin_mask = y_bin_mask.to(device, non_blocking=(device.type == "cuda"))
         with torch.autocast(device_type=device.type, enabled=(use_amp and device.type == "cuda")):
-            pred_reg, logits_bin = model(x_seq, x_tab)
-            loss, _, _ = masked_multitask_loss(
+            apgar_logits, pred_reg, logits_bin = model(x_seq, x_tab)
+            loss, _, _, _ = masked_multitask_loss(
+                apgar_logits,
                 pred_reg,
                 logits_bin,
+                y_apgar,
+                y_apgar_mask,
                 y_reg,
                 y_reg_mask,
                 y_bin,
                 y_bin_mask,
                 pos_weight,
-                regression_weight,
+                continuous_weight,
                 binary_weight,
             )
         bs = x_seq.size(0)
         total_loss += float(loss.detach().cpu()) * bs
         total_items += bs
+        apgar_logits_all.append(apgar_logits.detach().cpu().numpy())
+        apgar_true_all.append(y_apgar.detach().cpu().numpy())
+        apgar_mask_all.append(y_apgar_mask.detach().cpu().numpy())
         reg_preds.append(pred_reg.detach().cpu().numpy())
         reg_true.append(y_reg.detach().cpu().numpy())
         reg_mask.append(y_reg_mask.detach().cpu().numpy())
@@ -178,12 +213,51 @@ def evaluate_dataset(
         bin_true.append(y_bin.detach().cpu().numpy())
         bin_mask.append(y_bin_mask.detach().cpu().numpy())
 
+    apgar_logits_arr = np.concatenate(apgar_logits_all, axis=0)
+    apgar_true_arr = np.concatenate(apgar_true_all, axis=0)
+    apgar_mask_arr = np.concatenate(apgar_mask_all, axis=0)
     reg_pred_arr = np.concatenate(reg_preds, axis=0)
     reg_true_arr = np.concatenate(reg_true, axis=0)
     reg_mask_arr = np.concatenate(reg_mask, axis=0)
     bin_prob_arr = np.concatenate(bin_probs, axis=0)
     bin_true_arr = np.concatenate(bin_true, axis=0)
     bin_mask_arr = np.concatenate(bin_mask, axis=0)
+
+    apgar_prob_arr = torch.softmax(torch.from_numpy(apgar_logits_arr), dim=-1).numpy()
+    apgar_expected = (apgar_prob_arr * np.arange(11, dtype=np.float32)[None, None, :]).sum(axis=-1)
+    apgar_binary_prob = apgar_prob_arr[:, :, :7].sum(axis=-1)
+    apgar_binary_true = (apgar_true_arr < 7).astype(np.int32)
+
+    apgar_metrics: dict[str, dict[str, float]] = {}
+    derived_binary_metrics: dict[str, dict[str, float]] = {}
+    binary_pr_values: list[float] = []
+
+    for idx, name in enumerate(apgar_names):
+        valid = apgar_mask_arr[:, idx] > 0
+        if valid.sum() == 0:
+            apgar_metrics[name] = {"mae": float("nan"), "rmse": float("nan")}
+            derived_binary_metrics[f"{name}_below7"] = {
+                "roc_auc": float("nan"),
+                "pr_auc": float("nan"),
+                "prevalence": float("nan"),
+            }
+            continue
+        err = apgar_expected[valid, idx] - apgar_true_arr[valid, idx]
+        apgar_metrics[name] = {
+            "mae": float(np.abs(err).mean()),
+            "rmse": float(np.sqrt(np.mean(err**2))),
+        }
+        y_true = apgar_binary_true[valid, idx].astype(int)
+        prob = apgar_binary_prob[valid, idx].astype(float)
+        prevalence = float(y_true.mean()) if len(y_true) else float("nan")
+        if len(np.unique(y_true)) < 2:
+            metrics = {"roc_auc": float("nan"), "pr_auc": float("nan"), "prevalence": prevalence}
+        else:
+            out = compute_binary_metrics(y_true, prob, threshold=0.5)
+            metrics = {"roc_auc": out["roc_auc"], "pr_auc": out["pr_auc"], "prevalence": prevalence}
+            if np.isfinite(out["pr_auc"]):
+                binary_pr_values.append(out["pr_auc"])
+        derived_binary_metrics[f"{name}_below7"] = metrics
 
     reg_metrics: dict[str, dict[str, float]] = {}
     for idx, name in enumerate(regression_names):
@@ -198,7 +272,6 @@ def evaluate_dataset(
         }
 
     bin_metrics: dict[str, dict[str, float]] = {}
-    pr_values: list[float] = []
     for idx, name in enumerate(binary_names):
         valid = bin_mask_arr[:, idx] > 0
         if valid.sum() == 0:
@@ -213,16 +286,20 @@ def evaluate_dataset(
             out = compute_binary_metrics(y_true, prob, threshold=0.5)
             metrics = {"roc_auc": out["roc_auc"], "pr_auc": out["pr_auc"], "prevalence": prevalence}
             if np.isfinite(out["pr_auc"]):
-                pr_values.append(out["pr_auc"])
+                binary_pr_values.append(out["pr_auc"])
         bin_metrics[name] = metrics
 
-    apgar5_mae = reg_metrics.get("apgar5", {}).get("mae", float("nan"))
-    mean_binary_pr_auc = float(np.mean(pr_values)) if pr_values else float("nan")
+    apgar5_mae = apgar_metrics.get("apgar5", {}).get("mae", float("nan"))
+    apgar5_pr_auc = derived_binary_metrics.get("apgar5_below7", {}).get("pr_auc", float("nan"))
+    mean_binary_pr_auc = float(np.mean(binary_pr_values)) if binary_pr_values else float("nan")
     return {
         "loss": total_loss / max(total_items, 1),
+        "apgar": apgar_metrics,
+        "derived_binary": derived_binary_metrics,
         "regression": reg_metrics,
         "binary": bin_metrics,
         "apgar5_mae": apgar5_mae,
+        "apgar5_below7_pr_auc": apgar5_pr_auc,
         "mean_binary_pr_auc": mean_binary_pr_auc,
     }
 
@@ -230,13 +307,19 @@ def evaluate_dataset(
 def format_eval(tag: str, metrics: dict[str, object]) -> None:
     print(
         f"{tag}: loss={metrics['loss']:.5f} apgar5_MAE={metrics['apgar5_mae']:.4f} "
+        f"apgar5<7_PR-AUC={metrics['apgar5_below7_pr_auc']:.4f} "
         f"mean_binary_PR-AUC={metrics['mean_binary_pr_auc']:.4f}"
     )
-    reg = metrics["regression"]
-    for name, vals in reg.items():
+    for name, vals in metrics["apgar"].items():
         print(f"  {name}: MAE={vals['mae']:.4f} RMSE={vals['rmse']:.4f}")
-    binary = metrics["binary"]
-    for name, vals in binary.items():
+    for name, vals in metrics["derived_binary"].items():
+        print(
+            f"  {name}: prevalence={vals['prevalence']:.4f} "
+            f"ROC-AUC={vals['roc_auc']:.4f} PR-AUC={vals['pr_auc']:.4f}"
+        )
+    for name, vals in metrics["regression"].items():
+        print(f"  {name}: MAE={vals['mae']:.4f} RMSE={vals['rmse']:.4f}")
+    for name, vals in metrics["binary"].items():
         print(
             f"  {name}: prevalence={vals['prevalence']:.4f} "
             f"ROC-AUC={vals['roc_auc']:.4f} PR-AUC={vals['pr_auc']:.4f}"
@@ -279,11 +362,12 @@ def main() -> None:
 
     print(
         f"Train NPZ: {train_npz} X_seq={train_ds.X_seq.shape} X_tab={train_ds.X_tab.shape} "
-        f"regression_targets={train_ds.y_reg.shape[1]} binary_targets={train_ds.y_bin.shape[1]}"
+        f"apgar_targets={train_ds.y_apgar.shape[1]} continuous_targets={train_ds.y_reg.shape[1]} binary_targets={train_ds.y_bin.shape[1]}"
     )
     print(f"Sequence channels: {train_ds.sequence_channels}")
     print(f"Tabular features:  {len(train_ds.tabular_feature_names)}")
-    print(f"Regression targets: {train_ds.regression_target_names}")
+    print(f"Apgar targets:      {train_ds.apgar_target_names}")
+    print(f"Continuous targets: {train_ds.regression_target_names}")
     print(f"Binary targets:     {train_ds.binary_target_names}")
     print(
         f"Normalization (train only): FHR mean/std={means[0]:.3f}/{stds[0]:.3f}, "
@@ -292,17 +376,9 @@ def main() -> None:
     print(f"Training seed: {cfg.train.seed} (deterministic={cfg.train.deterministic})")
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=cfg.train.batch_size,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=use_cuda,
-    )
+    train_loader = DataLoader(train_ds, batch_size=cfg.train.batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda)
     val_loader = DataLoader(val_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda)
-    test_loader = DataLoader(
-        test_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda
-    )
+    test_loader = DataLoader(test_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda)
 
     model = MultimodalMultitaskTCN(
         sequence_in_channels=train_ds.X_seq.shape[1],
@@ -312,6 +388,7 @@ def main() -> None:
         dropout=cfg.model.dropout,
         tabular_hidden_dim=cfg.model.tabular_hidden_dim,
         fusion_hidden_dim=cfg.model.fusion_hidden_dim,
+        num_apgar_outputs=train_ds.y_apgar.shape[1],
         num_regression_outputs=train_ds.y_reg.shape[1],
         num_binary_outputs=train_ds.y_bin.shape[1],
     ).to(device)
@@ -327,25 +404,21 @@ def main() -> None:
         pos_weight_values.append(negatives / max(positives, 1.0))
     pos_weight = torch.tensor(pos_weight_values, dtype=torch.float32, device=device)
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=cfg.train.learning_rate,
-        weight_decay=cfg.train.weight_decay,
-    )
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
+    scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp) if hasattr(torch, "amp") else torch.cuda.amp.GradScaler(enabled=use_amp)
 
     ckpt_dir = cfg.paths.artifacts_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = ckpt_dir / "best_ctg2_multimodal.pt"
-    best_val_loss = float("inf")
-    best_val_for_stop = float("inf")
+    best_monitor = float("-inf")
+    best_monitor_for_stop = float("-inf")
     epochs_since_improve = 0
     history_rows: list[dict[str, float]] = []
     show_progress = not args.no_progress
 
     print(
         f"Training options: lr={cfg.train.learning_rate}, batch_size={cfg.train.batch_size}, "
-        f"gradient_clip_norm={cfg.train.gradient_clip_norm}, regression_weight={cfg.train.regression_loss_weight}, "
+        f"gradient_clip_norm={cfg.train.gradient_clip_norm}, continuous_weight={cfg.train.regression_loss_weight}, "
         f"binary_weight={cfg.train.binary_loss_weight}"
     )
     if cfg.train.early_stopping_enabled:
@@ -354,6 +427,7 @@ def main() -> None:
             f"(min_epochs={cfg.train.early_stopping_min_epochs}, patience={cfg.train.early_stopping_patience}, "
             f"min_delta={cfg.train.early_stopping_min_delta})"
         )
+        print("Checkpoint metric: mean_binary_PR-AUC (includes derived apgar<7 tasks)")
 
     for epoch in range(1, cfg.train.epochs + 1):
         print(f"\nEpoch {epoch}/{cfg.train.epochs}")
@@ -362,9 +436,11 @@ def main() -> None:
         n = 0
         iterator = tqdm(train_loader, desc="train", leave=False, unit="batch") if show_progress else train_loader
         for batch in iterator:
-            x_seq, x_tab, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
+            x_seq, x_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
             x_seq = x_seq.to(device, non_blocking=use_cuda)
             x_tab = x_tab.to(device, non_blocking=use_cuda)
+            y_apgar = y_apgar.to(device, non_blocking=use_cuda)
+            y_apgar_mask = y_apgar_mask.to(device, non_blocking=use_cuda)
             y_reg = y_reg.to(device, non_blocking=use_cuda)
             y_reg_mask = y_reg_mask.to(device, non_blocking=use_cuda)
             y_bin = y_bin.to(device, non_blocking=use_cuda)
@@ -372,10 +448,13 @@ def main() -> None:
 
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, enabled=(use_amp and device.type == "cuda")):
-                pred_reg, logits_bin = model(x_seq, x_tab)
-                loss, reg_loss, bin_loss = masked_multitask_loss(
+                apgar_logits, pred_reg, logits_bin = model(x_seq, x_tab)
+                loss, apgar_loss, reg_loss, bin_loss = masked_multitask_loss(
+                    apgar_logits,
                     pred_reg,
                     logits_bin,
+                    y_apgar,
+                    y_apgar_mask,
                     y_reg,
                     y_reg_mask,
                     y_bin,
@@ -402,7 +481,12 @@ def main() -> None:
             running += float(loss.detach().cpu()) * bs
             n += bs
             if show_progress:
-                iterator.set_postfix(loss=f"{running / max(n, 1):.4f}", reg=f"{float(reg_loss):.4f}", bin=f"{float(bin_loss):.4f}")
+                iterator.set_postfix(
+                    loss=f"{running / max(n, 1):.4f}",
+                    apgar=f"{float(apgar_loss):.4f}",
+                    reg=f"{float(reg_loss):.4f}",
+                    bin=f"{float(bin_loss):.4f}",
+                )
 
         train_loss = running / max(n, 1)
         val_metrics = evaluate_dataset(
@@ -413,28 +497,32 @@ def main() -> None:
             pos_weight,
             cfg.train.regression_loss_weight,
             cfg.train.binary_loss_weight,
+            train_ds.apgar_target_names,
             train_ds.regression_target_names,
             train_ds.binary_target_names,
         )
+        monitor = float(val_metrics["mean_binary_pr_auc"])
         history_rows.append(
             {
                 "epoch": epoch,
                 "train_loss": train_loss,
                 "val_loss": float(val_metrics["loss"]),
                 "val_apgar5_mae": float(val_metrics["apgar5_mae"]),
-                "val_mean_binary_pr_auc": float(val_metrics["mean_binary_pr_auc"]),
+                "val_apgar5_below7_pr_auc": float(val_metrics["apgar5_below7_pr_auc"]),
+                "val_mean_binary_pr_auc": monitor,
             }
         )
         print(
             f"epoch={epoch:03d} train_loss={train_loss:.5f} val_loss={val_metrics['loss']:.5f} "
             f"val_apgar5_MAE={val_metrics['apgar5_mae']:.4f} "
-            f"val_mean_binary_PR-AUC={val_metrics['mean_binary_pr_auc']:.4f}"
+            f"val_apgar5<7_PR-AUC={val_metrics['apgar5_below7_pr_auc']:.4f} "
+            f"val_mean_binary_PR-AUC={monitor:.4f}"
         )
 
-        if val_metrics["loss"] < (best_val_for_stop - cfg.train.early_stopping_min_delta):
-            best_val_for_stop = float(val_metrics["loss"])
+        if monitor > (best_monitor_for_stop + cfg.train.early_stopping_min_delta):
+            best_monitor_for_stop = monitor
             epochs_since_improve = 0
-            print(f"Early stopping monitor: significant val-loss improvement (best={best_val_for_stop:.5f})")
+            print(f"Early stopping monitor: significant mean_binary_PR-AUC improvement (best={best_monitor_for_stop:.4f})")
         else:
             epochs_since_improve += 1
             if cfg.train.early_stopping_enabled:
@@ -443,12 +531,13 @@ def main() -> None:
                     f"({epochs_since_improve}/{cfg.train.early_stopping_patience})"
                 )
 
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = float(val_metrics["loss"])
+        if monitor > best_monitor:
+            best_monitor = monitor
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
                     "val_loss": float(val_metrics["loss"]),
+                    "mean_binary_pr_auc": monitor,
                     "train_signal_means": means.tolist(),
                     "train_signal_stds": stds.tolist(),
                 },
@@ -461,7 +550,10 @@ def main() -> None:
             and epoch >= cfg.train.early_stopping_min_epochs
             and epochs_since_improve >= cfg.train.early_stopping_patience
         ):
-            print(f"Early stopping triggered at epoch {epoch} (best monitored val_loss={best_val_for_stop:.5f})")
+            print(
+                f"Early stopping triggered at epoch {epoch} "
+                f"(best monitored mean_binary_PR-AUC={best_monitor_for_stop:.4f})"
+            )
             break
 
     history_path = cfg.paths.artifacts_dir / "ctg2_multimodal_history.csv"
@@ -470,7 +562,7 @@ def main() -> None:
 
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state_dict"])
-    print(f"Loaded best checkpoint by val_loss={state['val_loss']:.5f}")
+    print(f"Loaded best checkpoint by mean_binary_PR-AUC={state['mean_binary_pr_auc']:.4f}")
 
     val_metrics = evaluate_dataset(
         model,
@@ -480,6 +572,7 @@ def main() -> None:
         pos_weight,
         cfg.train.regression_loss_weight,
         cfg.train.binary_loss_weight,
+        train_ds.apgar_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
     )
@@ -491,6 +584,7 @@ def main() -> None:
         pos_weight,
         cfg.train.regression_loss_weight,
         cfg.train.binary_loss_weight,
+        train_ds.apgar_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
     )

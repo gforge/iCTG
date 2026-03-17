@@ -127,6 +127,7 @@ class MultimodalMultitaskTCN(nn.Module):
         dropout: float,
         tabular_hidden_dim: int,
         fusion_hidden_dim: int,
+        num_apgar_outputs: int,
         num_regression_outputs: int,
         num_binary_outputs: int,
     ) -> None:
@@ -148,11 +149,14 @@ class MultimodalMultitaskTCN(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout),
         )
+        self.apgar_head = nn.Linear(fusion_hidden_dim, num_apgar_outputs * 11)
         self.regression_head = nn.Linear(fusion_hidden_dim, num_regression_outputs)
         self.binary_head = nn.Linear(fusion_hidden_dim, num_binary_outputs)
+        self.num_apgar_outputs = num_apgar_outputs
 
-    def forward(self, x_seq: torch.Tensor, x_tab: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x_seq: torch.Tensor, x_tab: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         seq_embed = self.sequence_encoder(x_seq)
         tab_embed = self.tabular_encoder(x_tab)
         fused = self.fusion(torch.cat([seq_embed, tab_embed], dim=1))
-        return self.regression_head(fused), self.binary_head(fused)
+        apgar_logits = self.apgar_head(fused).view(-1, self.num_apgar_outputs, 11)
+        return apgar_logits, self.regression_head(fused), self.binary_head(fused)

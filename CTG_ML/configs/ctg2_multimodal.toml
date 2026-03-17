@@ -17,7 +17,8 @@ treat_fhr_zero_as_missing = true
 treat_toco_zero_as_missing = true
 include_padding_mask = true
 include_signal_quality_channels = true
-quality_levels = ["G", "Y", "R"]
+# Green is the implicit baseline when both of these are 0.
+quality_levels = ["Y", "R"]
 output_dir = "artifacts_ctg2/tcn_multimodal_60m"
 chunk_vectors_per_batch = 64
 
@@ -26,6 +27,7 @@ chunk_vectors_per_batch = 64
 # The fields below are excluded by default because they would leak post-birth information.
 input_numeric = [
   "maternal_age",
+  "etablerade_varkar_seconds",
   "para_mhv1",
   "langd_inskrivning_cm",
   "bmi_inskrivning",
@@ -51,15 +53,13 @@ input_categorical = [
   "tobak_vecka_30_32",
 ]
 input_excluded_due_to_leakage = [
-  "etablerade_varkar_seconds",
-  "ph_navelartar",
-  "ph_navelven",
-  "ph_navel_below7",
 ]
 categorical_other_min_frequency = 50
 country_top_k = 15
-regression_outputs = ["apgar1", "apgar5", "apgar10"]
+apgar_outputs = ["apgar1", "apgar5", "apgar10"]
+continuous_outputs = ["ph_navelartar", "ph_navelven"]
 binary_outputs = [
+  "ph_navel_below7",
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
   "neonatal_sepsis_or_pneumonia",
