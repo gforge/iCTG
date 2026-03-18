@@ -160,6 +160,7 @@ def evaluate_dataset(
     apgar_names: list[str],
     regression_names: list[str],
     binary_names: list[str],
+    monitor_binary_tasks: list[str],
 ) -> dict[str, object]:
     model.eval()
     total_loss = 0.0
@@ -292,6 +293,15 @@ def evaluate_dataset(
     apgar5_mae = apgar_metrics.get("apgar5", {}).get("mae", float("nan"))
     apgar5_pr_auc = derived_binary_metrics.get("apgar5_below7", {}).get("pr_auc", float("nan"))
     mean_binary_pr_auc = float(np.mean(binary_pr_values)) if binary_pr_values else float("nan")
+    selected_prs: list[float] = []
+    combined_binary_metrics = {}
+    combined_binary_metrics.update(derived_binary_metrics)
+    combined_binary_metrics.update(bin_metrics)
+    for name in monitor_binary_tasks:
+        pr = combined_binary_metrics.get(name, {}).get("pr_auc", float("nan"))
+        if np.isfinite(pr):
+            selected_prs.append(float(pr))
+    monitor_binary_pr_auc = float(np.mean(selected_prs)) if selected_prs else mean_binary_pr_auc
     return {
         "loss": total_loss / max(total_items, 1),
         "apgar": apgar_metrics,
@@ -301,6 +311,7 @@ def evaluate_dataset(
         "apgar5_mae": apgar5_mae,
         "apgar5_below7_pr_auc": apgar5_pr_auc,
         "mean_binary_pr_auc": mean_binary_pr_auc,
+        "monitor_binary_pr_auc": monitor_binary_pr_auc,
     }
 
 
@@ -308,7 +319,8 @@ def format_eval(tag: str, metrics: dict[str, object]) -> None:
     print(
         f"{tag}: loss={metrics['loss']:.5f} apgar5_MAE={metrics['apgar5_mae']:.4f} "
         f"apgar5<7_PR-AUC={metrics['apgar5_below7_pr_auc']:.4f} "
-        f"mean_binary_PR-AUC={metrics['mean_binary_pr_auc']:.4f}"
+        f"mean_binary_PR-AUC={metrics['mean_binary_pr_auc']:.4f} "
+        f"monitor_binary_PR-AUC={metrics['monitor_binary_pr_auc']:.4f}"
     )
     for name, vals in metrics["apgar"].items():
         print(f"  {name}: MAE={vals['mae']:.4f} RMSE={vals['rmse']:.4f}")
@@ -427,7 +439,7 @@ def main() -> None:
             f"(min_epochs={cfg.train.early_stopping_min_epochs}, patience={cfg.train.early_stopping_patience}, "
             f"min_delta={cfg.train.early_stopping_min_delta})"
         )
-        print("Checkpoint metric: mean_binary_PR-AUC (includes derived apgar<7 tasks)")
+        print(f"Checkpoint metric: monitor_binary_PR-AUC over {cfg.train.monitor_binary_tasks}")
 
     for epoch in range(1, cfg.train.epochs + 1):
         print(f"\nEpoch {epoch}/{cfg.train.epochs}")
@@ -500,8 +512,9 @@ def main() -> None:
             train_ds.apgar_target_names,
             train_ds.regression_target_names,
             train_ds.binary_target_names,
+            cfg.train.monitor_binary_tasks,
         )
-        monitor = float(val_metrics["mean_binary_pr_auc"])
+        monitor = float(val_metrics["monitor_binary_pr_auc"])
         history_rows.append(
             {
                 "epoch": epoch,
@@ -509,20 +522,22 @@ def main() -> None:
                 "val_loss": float(val_metrics["loss"]),
                 "val_apgar5_mae": float(val_metrics["apgar5_mae"]),
                 "val_apgar5_below7_pr_auc": float(val_metrics["apgar5_below7_pr_auc"]),
-                "val_mean_binary_pr_auc": monitor,
+                "val_mean_binary_pr_auc": float(val_metrics["mean_binary_pr_auc"]),
+                "val_monitor_binary_pr_auc": monitor,
             }
         )
         print(
             f"epoch={epoch:03d} train_loss={train_loss:.5f} val_loss={val_metrics['loss']:.5f} "
             f"val_apgar5_MAE={val_metrics['apgar5_mae']:.4f} "
             f"val_apgar5<7_PR-AUC={val_metrics['apgar5_below7_pr_auc']:.4f} "
-            f"val_mean_binary_PR-AUC={monitor:.4f}"
+            f"val_mean_binary_PR-AUC={val_metrics['mean_binary_pr_auc']:.4f} "
+            f"val_monitor_binary_PR-AUC={monitor:.4f}"
         )
 
         if monitor > (best_monitor_for_stop + cfg.train.early_stopping_min_delta):
             best_monitor_for_stop = monitor
             epochs_since_improve = 0
-            print(f"Early stopping monitor: significant mean_binary_PR-AUC improvement (best={best_monitor_for_stop:.4f})")
+            print(f"Early stopping monitor: significant monitor_binary_PR-AUC improvement (best={best_monitor_for_stop:.4f})")
         else:
             epochs_since_improve += 1
             if cfg.train.early_stopping_enabled:
@@ -537,7 +552,7 @@ def main() -> None:
                 {
                     "model_state_dict": model.state_dict(),
                     "val_loss": float(val_metrics["loss"]),
-                    "mean_binary_pr_auc": monitor,
+                    "monitor_binary_pr_auc": monitor,
                     "train_signal_means": means.tolist(),
                     "train_signal_stds": stds.tolist(),
                 },
@@ -552,7 +567,7 @@ def main() -> None:
         ):
             print(
                 f"Early stopping triggered at epoch {epoch} "
-                f"(best monitored mean_binary_PR-AUC={best_monitor_for_stop:.4f})"
+                f"(best monitored monitor_binary_PR-AUC={best_monitor_for_stop:.4f})"
             )
             break
 
@@ -562,7 +577,7 @@ def main() -> None:
 
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state_dict"])
-    print(f"Loaded best checkpoint by mean_binary_PR-AUC={state['mean_binary_pr_auc']:.4f}")
+    print(f"Loaded best checkpoint by monitor_binary_PR-AUC={state['monitor_binary_pr_auc']:.4f}")
 
     val_metrics = evaluate_dataset(
         model,
@@ -575,6 +590,7 @@ def main() -> None:
         train_ds.apgar_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
+        cfg.train.monitor_binary_tasks,
     )
     test_metrics = evaluate_dataset(
         model,
@@ -587,6 +603,7 @@ def main() -> None:
         train_ds.apgar_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
+        cfg.train.monitor_binary_tasks,
     )
     format_eval("VAL", val_metrics)
     format_eval("TEST", test_metrics)

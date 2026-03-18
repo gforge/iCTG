@@ -23,6 +23,7 @@ class MultitaskTargetSpec:
     apgar_names: list[str]
     continuous_names: list[str]
     binary_names: list[str]
+    binary_names_missing_as_false: list[str]
 
 def _clean_boolean_series(series: pd.Series) -> pd.Series:
     if series.dtype == bool:
@@ -222,7 +223,10 @@ def build_targets(
     bin_mask = np.zeros_like(bin_targets, dtype=np.float32)
     for idx, col in enumerate(target_spec.binary_names):
         vals = _clean_boolean_series(df[col])
-        present = vals.notna().to_numpy()
+        if col in getattr(target_spec, "binary_names_missing_as_false", []):
+            present = np.ones(len(df), dtype=bool)
+        else:
+            present = vals.notna().to_numpy()
         bin_targets[:, idx] = vals.fillna(False).astype(np.float32).to_numpy()
         bin_mask[:, idx] = present.astype(np.float32)
 

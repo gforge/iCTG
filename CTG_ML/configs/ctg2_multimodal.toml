@@ -65,6 +65,12 @@ binary_outputs = [
   "neonatal_sepsis_or_pneumonia",
   "respiratorbehandling",
 ]
+binary_outputs_missing_as_false = [
+  "shoulder_dystocia",
+  "treatment_for_hypoglycemia",
+  "neonatal_sepsis_or_pneumonia",
+  "respiratorbehandling",
+]
 
 [model]
 tcn_channels = [32, 32, 64, 64, 64, 128, 128, 128]
@@ -79,11 +85,18 @@ batch_size = 128
 epochs = 20
 weight_decay = 0.0001
 regression_loss_weight = 1.0
-binary_loss_weight = 1.0
+binary_loss_weight = 2.0
 gradient_clip_norm = 1.0
 use_amp = true
-seed = 42
+seed = 44
 deterministic = false
+monitor_binary_tasks = [
+  "apgar1_below7",
+  "apgar5_below7",
+  "shoulder_dystocia",
+  "treatment_for_hypoglycemia",
+  "respiratorbehandling",
+]
 early_stopping_enabled = true
 early_stopping_min_epochs = 8
 early_stopping_patience = 8

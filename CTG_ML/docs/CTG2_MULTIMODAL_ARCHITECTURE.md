@@ -61,6 +61,52 @@ flowchart LR
     BH --> BO["Binary logits<br/>5 neonatal outcomes"]
 ```
 
+## Presentation Layout
+
+This version is intentionally stacked vertically so it is easier to export as a slide-friendly image.
+
+```mermaid
+flowchart TD
+    A["CTG sequence<br/>(B, 5, 3600)"]
+    T["Registry inputs<br/>(B, 74)"]
+
+    A --> S0["TCN stack<br/>Block 0: 5 -> 32, d=1<br/>Block 1: 32 -> 32, d=2<br/>Block 2: 32 -> 64, d=4"]
+    S0 --> S1["TCN stack<br/>Block 3: 64 -> 64, d=8<br/>Block 4: 64 -> 64, d=16<br/>Block 5: 64 -> 128, d=32"]
+    S1 --> S2["TCN stack<br/>Block 6: 128 -> 128, d=64<br/>Block 7: 128 -> 128, d=128"]
+    S2 --> P["AdaptiveAvgPool1d(1)<br/>Flatten<br/>CTG embedding: (B, 128)"]
+
+    T --> TE["Tabular MLP<br/>Linear 74 -> 64<br/>ReLU + Dropout<br/>Registry embedding: (B, 64)"]
+
+    P --> C["Concatenate<br/>(B, 192)"]
+    TE --> C
+
+    C --> FU["Fusion MLP<br/>Linear 192 -> 128<br/>ReLU + Dropout"]
+    FU --> AH["Apgar head<br/>Linear 128 -> 33<br/>reshape to (3, 11)"]
+    FU --> RH["Continuous head<br/>Linear 128 -> 2"]
+    FU --> BH["Binary head<br/>Linear 128 -> 5"]
+
+    AH --> AO["Apgar class logits"]
+    RH --> RO["pH outputs"]
+    BH --> BO["Binary outcome logits"]
+```
+
+## Ultra-Compact Flow
+
+If you need the smallest possible version for a figure caption or narrow slide:
+
+```mermaid
+flowchart TD
+    A["CTG (5 x 3600)"] --> B["8 residual dilated Conv1D blocks<br/>5 -> 32 -> 32 -> 64 -> 64 -> 64 -> 128 -> 128 -> 128"]
+    B --> P["Pool + flatten<br/>CTG embedding (128)"]
+    T["Registry vector (74)"] --> TE["Tabular MLP<br/>74 -> 64"]
+    P --> C["Concat (192)"]
+    TE --> C
+    C --> F["Fusion MLP<br/>192 -> 128"]
+    F --> O1["Apgar head<br/>3 x 11 classes"]
+    F --> O2["Continuous head<br/>2 outputs"]
+    F --> O3["Binary head<br/>5 outputs"]
+```
+
 ## Block Structure
 
 Each TCN block has the same internal structure:

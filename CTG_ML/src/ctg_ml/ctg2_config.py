@@ -45,6 +45,7 @@ class CTG2RegistryConfig:
     apgar_outputs: list[str]
     continuous_outputs: list[str]
     binary_outputs: list[str]
+    binary_outputs_missing_as_false: list[str]
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class CTG2TrainConfig:
     use_amp: bool
     seed: int
     deterministic: bool
+    monitor_binary_tasks: list[str]
     early_stopping_enabled: bool
     early_stopping_min_epochs: int
     early_stopping_patience: int
@@ -133,6 +135,7 @@ def load_ctg2_config(path: str | Path = "configs/ctg2_multimodal.toml") -> CTG2P
             apgar_outputs=[str(x) for x in registry["apgar_outputs"]],
             continuous_outputs=[str(x) for x in registry["continuous_outputs"]],
             binary_outputs=[str(x) for x in registry["binary_outputs"]],
+            binary_outputs_missing_as_false=[str(x) for x in registry.get("binary_outputs_missing_as_false", [])],
         ),
         model=CTG2ModelConfig(
             tcn_channels=[int(x) for x in model["tcn_channels"]],
@@ -152,6 +155,7 @@ def load_ctg2_config(path: str | Path = "configs/ctg2_multimodal.toml") -> CTG2P
             use_amp=bool(train["use_amp"]),
             seed=int(train["seed"]),
             deterministic=bool(train["deterministic"]),
+            monitor_binary_tasks=[str(x) for x in train.get("monitor_binary_tasks", [])],
             early_stopping_enabled=bool(train["early_stopping_enabled"]),
             early_stopping_min_epochs=int(train["early_stopping_min_epochs"]),
             early_stopping_patience=int(train["early_stopping_patience"]),

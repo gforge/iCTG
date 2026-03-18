@@ -255,6 +255,7 @@ def build_ctg2_multimodal_npz_files(
         apgar_names=list(registry_cfg.apgar_outputs),
         continuous_names=list(registry_cfg.continuous_outputs),
         binary_names=list(registry_cfg.binary_outputs),
+        binary_names_missing_as_false=list(registry_cfg.binary_outputs_missing_as_false),
     )
 
     train_df = merged[merged["split"] == "train"].copy()
