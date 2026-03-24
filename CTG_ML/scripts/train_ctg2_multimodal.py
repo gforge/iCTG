@@ -346,6 +346,16 @@ def main() -> None:
     parser.add_argument("--test-npz", default=None)
     parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
     parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument(
+        "--ablate-sequence",
+        action="store_true",
+        help="Registry-only ablation: replace all CTG sequence inputs with zeros after normalization.",
+    )
+    parser.add_argument(
+        "--ablate-tabular",
+        action="store_true",
+        help="CTG-only ablation: replace all registry/tabular inputs with the train-set mean feature vector.",
+    )
     args = parser.parse_args()
 
     cfg = load_ctg2_config(args.config)
@@ -368,6 +378,21 @@ def main() -> None:
     normalize_sequences_inplace(val_ds.X_seq, means, stds)
     normalize_sequences_inplace(test_ds.X_seq, means, stds)
 
+    if args.ablate_sequence and args.ablate_tabular:
+        raise ValueError("Cannot use both --ablate-sequence and --ablate-tabular at the same time.")
+    modality_mode = "multimodal"
+    if args.ablate_sequence:
+        modality_mode = "registry_only"
+        train_ds.X_seq.fill(0.0)
+        val_ds.X_seq.fill(0.0)
+        test_ds.X_seq.fill(0.0)
+    elif args.ablate_tabular:
+        modality_mode = "ctg_only"
+        train_tab_mean = train_ds.X_tab.mean(axis=0, keepdims=True).astype(np.float32)
+        train_ds.X_tab[:] = train_tab_mean
+        val_ds.X_tab[:] = train_tab_mean
+        test_ds.X_tab[:] = train_tab_mean
+
     device = resolve_device(args.device)
     use_cuda = device.type == "cuda"
     use_amp = bool(cfg.train.use_amp and use_cuda)
@@ -385,6 +410,7 @@ def main() -> None:
         f"Normalization (train only): FHR mean/std={means[0]:.3f}/{stds[0]:.3f}, "
         f"toco mean/std={means[1]:.3f}/{stds[1]:.3f}"
     )
+    print(f"Modality mode: {modality_mode}")
     print(f"Training seed: {cfg.train.seed} (deterministic={cfg.train.deterministic})")
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
@@ -421,7 +447,7 @@ def main() -> None:
 
     ckpt_dir = cfg.paths.artifacts_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_path = ckpt_dir / "best_ctg2_multimodal.pt"
+    ckpt_path = ckpt_dir / f"best_ctg2_multimodal_{modality_mode}.pt"
     best_monitor = float("-inf")
     best_monitor_for_stop = float("-inf")
     epochs_since_improve = 0
@@ -571,7 +597,7 @@ def main() -> None:
             )
             break
 
-    history_path = cfg.paths.artifacts_dir / "ctg2_multimodal_history.csv"
+    history_path = cfg.paths.artifacts_dir / f"ctg2_multimodal_history_{modality_mode}.csv"
     pd.DataFrame(history_rows).to_csv(history_path, index=False)
     print(f"\nSaved training history to {history_path}")
 

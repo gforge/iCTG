@@ -88,7 +88,7 @@ regression_loss_weight = 1.0
 binary_loss_weight = 2.0
 gradient_clip_norm = 1.0
 use_amp = true
-seed = 44
+seed = 50
 deterministic = false
 monitor_binary_tasks = [
   "apgar1_below7",
