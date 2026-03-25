@@ -57,6 +57,7 @@ input_excluded_due_to_leakage = [
 categorical_other_min_frequency = 50
 country_top_k = 15
 apgar_outputs = ["apgar1", "apgar5", "apgar10"]
+categorical_outputs = ["forlossningsslut"]
 continuous_outputs = ["ph_navelartar", "ph_navelven"]
 binary_outputs = [
   "ph_navel_below7",
@@ -84,11 +85,14 @@ learning_rate = 0.0005
 batch_size = 128
 epochs = 20
 weight_decay = 0.0001
+# Tempered inverse-frequency class weighting for Apgar 0..10 classification.
+# 0.0 disables weighting; 0.5 is a conservative first pass.
+apgar_class_weight_power = 0.0
 regression_loss_weight = 1.0
 binary_loss_weight = 2.0
 gradient_clip_norm = 1.0
 use_amp = true
-seed = 50
+seed = 51
 deterministic = false
 monitor_binary_tasks = [
   "apgar1_below7",

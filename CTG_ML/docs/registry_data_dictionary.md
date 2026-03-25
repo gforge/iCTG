@@ -94,7 +94,7 @@ In the descriptions below:
 - Raw variable: `forlossningsslut_basta_skattning`
 - Description: Best-estimate classification of how labour ended.
 - Handling: Saved as raw text.
-- ML-use: Not used now, could be used as optional for intervention->outcome prediction
+- ML-use: Used as categorical output (4-class auxiliary target)
 - Prevalance: Vaginalt, ej instrumentellt 77.82%, Instrumentell vaginal förlossning 6.61%, Akut kejsarsnitt 6.61%
 
 

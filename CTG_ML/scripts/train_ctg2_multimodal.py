@@ -52,6 +52,8 @@ class MultimodalNPZDataset(Dataset):
         self.X_tab = data["X_tab"].astype(np.float32)
         self.y_apgar = data["y_apgar"].astype(np.int64)
         self.y_apgar_mask = data["y_apgar_mask"].astype(np.float32)
+        self.y_cat = data["y_cat"].astype(np.int64)
+        self.y_cat_mask = data["y_cat_mask"].astype(np.float32)
         self.y_reg = data["y_reg"].astype(np.float32)
         self.y_reg_mask = data["y_reg_mask"].astype(np.float32)
         self.y_bin = data["y_bin"].astype(np.float32)
@@ -59,6 +61,8 @@ class MultimodalNPZDataset(Dataset):
         self.sequence_channels = [str(x) for x in data["sequence_channels"].tolist()]
         self.tabular_feature_names = [str(x) for x in data["tabular_feature_names"].tolist()]
         self.apgar_target_names = [str(x) for x in data["apgar_target_names"].tolist()]
+        self.categorical_target_names = [str(x) for x in data["categorical_target_names"].tolist()]
+        self.categorical_class_counts = [int(x) for x in data["categorical_class_counts"].tolist()]
         self.regression_target_names = [str(x) for x in data["regression_target_names"].tolist()]
         self.binary_target_names = [str(x) for x in data["binary_target_names"].tolist()]
         if len(self.X_seq) != len(self.X_tab):
@@ -73,6 +77,8 @@ class MultimodalNPZDataset(Dataset):
             torch.from_numpy(self.X_tab[idx]),
             torch.from_numpy(self.y_apgar[idx]),
             torch.from_numpy(self.y_apgar_mask[idx]),
+            torch.from_numpy(self.y_cat[idx]),
+            torch.from_numpy(self.y_cat_mask[idx]),
             torch.from_numpy(self.y_reg[idx]),
             torch.from_numpy(self.y_reg_mask[idx]),
             torch.from_numpy(self.y_bin[idx]),
@@ -107,16 +113,46 @@ def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarr
         X[:, 2:, :] = masks
 
 
+def compute_apgar_class_weights(
+    y_apgar: np.ndarray,
+    y_apgar_mask: np.ndarray,
+    power: float,
+) -> np.ndarray:
+    num_targets = y_apgar.shape[1]
+    weights = np.ones((num_targets, 11), dtype=np.float32)
+    if power <= 0:
+        return weights
+
+    for idx in range(num_targets):
+        valid = y_apgar_mask[:, idx] > 0
+        if valid.sum() == 0:
+            continue
+        counts = np.bincount(y_apgar[valid, idx], minlength=11).astype(np.float32)
+        nonzero = counts > 0
+        if not nonzero.any():
+            continue
+        class_weights = np.ones(11, dtype=np.float32)
+        class_weights[nonzero] = np.power(valid.sum() / counts[nonzero], power, dtype=np.float32)
+        # Keep the average weight near 1.0 so this does not silently rescale the full multitask loss.
+        class_weights[nonzero] /= class_weights[nonzero].mean()
+        weights[idx] = class_weights
+    return weights
+
+
 def masked_multitask_loss(
     apgar_logits: torch.Tensor,
+    categorical_logits: list[torch.Tensor],
     reg_pred: torch.Tensor,
     bin_logits: torch.Tensor,
     y_apgar: torch.Tensor,
     y_apgar_mask: torch.Tensor,
+    y_cat: torch.Tensor,
+    y_cat_mask: torch.Tensor,
     y_reg: torch.Tensor,
     y_reg_mask: torch.Tensor,
     y_bin: torch.Tensor,
     y_bin_mask: torch.Tensor,
+    apgar_class_weights: torch.Tensor,
     pos_weight: torch.Tensor,
     continuous_weight: float,
     binary_weight: float,
@@ -126,10 +162,25 @@ def masked_multitask_loss(
     for idx in range(apgar_logits.shape[1]):
         valid = y_apgar_mask[:, idx] > 0
         if valid.any():
-            ce = F.cross_entropy(apgar_logits[valid, idx, :], y_apgar[valid, idx], reduction="mean")
+            ce = F.cross_entropy(
+                apgar_logits[valid, idx, :],
+                y_apgar[valid, idx],
+                weight=apgar_class_weights[idx],
+                reduction="mean",
+            )
             apgar_loss_total = apgar_loss_total + ce
             apgar_terms += 1.0
     apgar_loss = apgar_loss_total / max(apgar_terms, 1.0)
+
+    cat_loss_total = torch.tensor(0.0, device=apgar_logits.device)
+    cat_terms = 0.0
+    for idx, logits in enumerate(categorical_logits):
+        valid = y_cat_mask[:, idx] > 0
+        if valid.any():
+            ce = F.cross_entropy(logits[valid], y_cat[valid, idx], reduction="mean")
+            cat_loss_total = cat_loss_total + ce
+            cat_terms += 1.0
+    cat_loss = cat_loss_total / max(cat_terms, 1.0)
 
     reg_loss_raw = F.smooth_l1_loss(reg_pred, y_reg, reduction="none")
     reg_denom = y_reg_mask.sum().clamp_min(1.0)
@@ -144,8 +195,8 @@ def masked_multitask_loss(
     bin_denom = y_bin_mask.sum().clamp_min(1.0)
     bin_loss = (bin_loss_raw * y_bin_mask).sum() / bin_denom
 
-    total = apgar_loss + (continuous_weight * reg_loss) + (binary_weight * bin_loss)
-    return total, apgar_loss.detach(), reg_loss.detach(), bin_loss.detach()
+    total = apgar_loss + cat_loss + (continuous_weight * reg_loss) + (binary_weight * bin_loss)
+    return total, (apgar_loss + cat_loss).detach(), reg_loss.detach(), bin_loss.detach()
 
 
 @torch.no_grad()
@@ -154,10 +205,12 @@ def evaluate_dataset(
     loader: DataLoader,
     device: torch.device,
     use_amp: bool,
+    apgar_class_weights: torch.Tensor,
     pos_weight: torch.Tensor,
     continuous_weight: float,
     binary_weight: float,
     apgar_names: list[str],
+    categorical_names: list[str],
     regression_names: list[str],
     binary_names: list[str],
     monitor_binary_tasks: list[str],
@@ -168,6 +221,9 @@ def evaluate_dataset(
     apgar_logits_all: list[np.ndarray] = []
     apgar_true_all: list[np.ndarray] = []
     apgar_mask_all: list[np.ndarray] = []
+    cat_logits_all: list[list[np.ndarray]] | None = None
+    cat_true_all: list[np.ndarray] = []
+    cat_mask_all: list[np.ndarray] = []
     reg_preds: list[np.ndarray] = []
     reg_true: list[np.ndarray] = []
     reg_mask: list[np.ndarray] = []
@@ -176,27 +232,33 @@ def evaluate_dataset(
     bin_mask: list[np.ndarray] = []
 
     for batch in loader:
-        x_seq, x_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
+        x_seq, x_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
         x_seq = x_seq.to(device, non_blocking=(device.type == "cuda"))
         x_tab = x_tab.to(device, non_blocking=(device.type == "cuda"))
         y_apgar = y_apgar.to(device, non_blocking=(device.type == "cuda"))
         y_apgar_mask = y_apgar_mask.to(device, non_blocking=(device.type == "cuda"))
+        y_cat = y_cat.to(device, non_blocking=(device.type == "cuda"))
+        y_cat_mask = y_cat_mask.to(device, non_blocking=(device.type == "cuda"))
         y_reg = y_reg.to(device, non_blocking=(device.type == "cuda"))
         y_reg_mask = y_reg_mask.to(device, non_blocking=(device.type == "cuda"))
         y_bin = y_bin.to(device, non_blocking=(device.type == "cuda"))
         y_bin_mask = y_bin_mask.to(device, non_blocking=(device.type == "cuda"))
         with torch.autocast(device_type=device.type, enabled=(use_amp and device.type == "cuda")):
-            apgar_logits, pred_reg, logits_bin = model(x_seq, x_tab)
+            apgar_logits, categorical_logits, pred_reg, logits_bin = model(x_seq, x_tab)
             loss, _, _, _ = masked_multitask_loss(
                 apgar_logits,
+                categorical_logits,
                 pred_reg,
                 logits_bin,
                 y_apgar,
                 y_apgar_mask,
+                y_cat,
+                y_cat_mask,
                 y_reg,
                 y_reg_mask,
                 y_bin,
                 y_bin_mask,
+                apgar_class_weights,
                 pos_weight,
                 continuous_weight,
                 binary_weight,
@@ -207,6 +269,12 @@ def evaluate_dataset(
         apgar_logits_all.append(apgar_logits.detach().cpu().numpy())
         apgar_true_all.append(y_apgar.detach().cpu().numpy())
         apgar_mask_all.append(y_apgar_mask.detach().cpu().numpy())
+        if cat_logits_all is None:
+            cat_logits_all = [[] for _ in range(len(categorical_logits))]
+        for idx, logits in enumerate(categorical_logits):
+            cat_logits_all[idx].append(logits.detach().cpu().numpy())
+        cat_true_all.append(y_cat.detach().cpu().numpy())
+        cat_mask_all.append(y_cat_mask.detach().cpu().numpy())
         reg_preds.append(pred_reg.detach().cpu().numpy())
         reg_true.append(y_reg.detach().cpu().numpy())
         reg_mask.append(y_reg_mask.detach().cpu().numpy())
@@ -217,6 +285,8 @@ def evaluate_dataset(
     apgar_logits_arr = np.concatenate(apgar_logits_all, axis=0)
     apgar_true_arr = np.concatenate(apgar_true_all, axis=0)
     apgar_mask_arr = np.concatenate(apgar_mask_all, axis=0)
+    cat_true_arr = np.concatenate(cat_true_all, axis=0) if cat_true_all else np.zeros((len(apgar_true_arr), 0), dtype=np.int64)
+    cat_mask_arr = np.concatenate(cat_mask_all, axis=0) if cat_mask_all else np.zeros((len(apgar_true_arr), 0), dtype=np.float32)
     reg_pred_arr = np.concatenate(reg_preds, axis=0)
     reg_true_arr = np.concatenate(reg_true, axis=0)
     reg_mask_arr = np.concatenate(reg_mask, axis=0)
@@ -231,6 +301,7 @@ def evaluate_dataset(
 
     apgar_metrics: dict[str, dict[str, float]] = {}
     derived_binary_metrics: dict[str, dict[str, float]] = {}
+    categorical_metrics: dict[str, dict[str, float]] = {}
     binary_pr_values: list[float] = []
 
     for idx, name in enumerate(apgar_names):
@@ -259,6 +330,17 @@ def evaluate_dataset(
             if np.isfinite(out["pr_auc"]):
                 binary_pr_values.append(out["pr_auc"])
         derived_binary_metrics[f"{name}_below7"] = metrics
+
+    if cat_logits_all is None:
+        cat_logits_all = []
+    for idx, name in enumerate(categorical_names):
+        valid = cat_mask_arr[:, idx] > 0
+        if valid.sum() == 0:
+            categorical_metrics[name] = {"accuracy": float("nan")}
+            continue
+        logits_arr = np.concatenate(cat_logits_all[idx], axis=0)
+        pred = logits_arr.argmax(axis=1)
+        categorical_metrics[name] = {"accuracy": float((pred[valid] == cat_true_arr[valid, idx]).mean())}
 
     reg_metrics: dict[str, dict[str, float]] = {}
     for idx, name in enumerate(regression_names):
@@ -306,6 +388,7 @@ def evaluate_dataset(
         "loss": total_loss / max(total_items, 1),
         "apgar": apgar_metrics,
         "derived_binary": derived_binary_metrics,
+        "categorical": categorical_metrics,
         "regression": reg_metrics,
         "binary": bin_metrics,
         "apgar5_mae": apgar5_mae,
@@ -329,6 +412,8 @@ def format_eval(tag: str, metrics: dict[str, object]) -> None:
             f"  {name}: prevalence={vals['prevalence']:.4f} "
             f"ROC-AUC={vals['roc_auc']:.4f} PR-AUC={vals['pr_auc']:.4f}"
         )
+    for name, vals in metrics["categorical"].items():
+        print(f"  {name}: accuracy={vals['accuracy']:.4f}")
     for name, vals in metrics["regression"].items():
         print(f"  {name}: MAE={vals['mae']:.4f} RMSE={vals['rmse']:.4f}")
     for name, vals in metrics["binary"].items():
@@ -399,11 +484,13 @@ def main() -> None:
 
     print(
         f"Train NPZ: {train_npz} X_seq={train_ds.X_seq.shape} X_tab={train_ds.X_tab.shape} "
-        f"apgar_targets={train_ds.y_apgar.shape[1]} continuous_targets={train_ds.y_reg.shape[1]} binary_targets={train_ds.y_bin.shape[1]}"
+        f"apgar_targets={train_ds.y_apgar.shape[1]} categorical_targets={train_ds.y_cat.shape[1]} "
+        f"continuous_targets={train_ds.y_reg.shape[1]} binary_targets={train_ds.y_bin.shape[1]}"
     )
     print(f"Sequence channels: {train_ds.sequence_channels}")
     print(f"Tabular features:  {len(train_ds.tabular_feature_names)}")
     print(f"Apgar targets:      {train_ds.apgar_target_names}")
+    print(f"Categorical targets:{train_ds.categorical_target_names}")
     print(f"Continuous targets: {train_ds.regression_target_names}")
     print(f"Binary targets:     {train_ds.binary_target_names}")
     print(
@@ -427,6 +514,7 @@ def main() -> None:
         tabular_hidden_dim=cfg.model.tabular_hidden_dim,
         fusion_hidden_dim=cfg.model.fusion_hidden_dim,
         num_apgar_outputs=train_ds.y_apgar.shape[1],
+        categorical_output_dims=train_ds.categorical_class_counts,
         num_regression_outputs=train_ds.y_reg.shape[1],
         num_binary_outputs=train_ds.y_bin.shape[1],
     ).to(device)
@@ -441,6 +529,11 @@ def main() -> None:
         negatives = float(valid.sum() - positives)
         pos_weight_values.append(negatives / max(positives, 1.0))
     pos_weight = torch.tensor(pos_weight_values, dtype=torch.float32, device=device)
+    apgar_class_weights = torch.tensor(
+        compute_apgar_class_weights(train_ds.y_apgar, train_ds.y_apgar_mask, cfg.train.apgar_class_weight_power),
+        dtype=torch.float32,
+        device=device,
+    )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
     scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp) if hasattr(torch, "amp") else torch.cuda.amp.GradScaler(enabled=use_amp)
@@ -456,6 +549,7 @@ def main() -> None:
 
     print(
         f"Training options: lr={cfg.train.learning_rate}, batch_size={cfg.train.batch_size}, "
+        f"apgar_class_weight_power={cfg.train.apgar_class_weight_power}, "
         f"gradient_clip_norm={cfg.train.gradient_clip_norm}, continuous_weight={cfg.train.regression_loss_weight}, "
         f"binary_weight={cfg.train.binary_loss_weight}"
     )
@@ -474,11 +568,13 @@ def main() -> None:
         n = 0
         iterator = tqdm(train_loader, desc="train", leave=False, unit="batch") if show_progress else train_loader
         for batch in iterator:
-            x_seq, x_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
+            x_seq, x_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
             x_seq = x_seq.to(device, non_blocking=use_cuda)
             x_tab = x_tab.to(device, non_blocking=use_cuda)
             y_apgar = y_apgar.to(device, non_blocking=use_cuda)
             y_apgar_mask = y_apgar_mask.to(device, non_blocking=use_cuda)
+            y_cat = y_cat.to(device, non_blocking=use_cuda)
+            y_cat_mask = y_cat_mask.to(device, non_blocking=use_cuda)
             y_reg = y_reg.to(device, non_blocking=use_cuda)
             y_reg_mask = y_reg_mask.to(device, non_blocking=use_cuda)
             y_bin = y_bin.to(device, non_blocking=use_cuda)
@@ -486,17 +582,21 @@ def main() -> None:
 
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, enabled=(use_amp and device.type == "cuda")):
-                apgar_logits, pred_reg, logits_bin = model(x_seq, x_tab)
+                apgar_logits, categorical_logits, pred_reg, logits_bin = model(x_seq, x_tab)
                 loss, apgar_loss, reg_loss, bin_loss = masked_multitask_loss(
                     apgar_logits,
+                    categorical_logits,
                     pred_reg,
                     logits_bin,
                     y_apgar,
                     y_apgar_mask,
+                    y_cat,
+                    y_cat_mask,
                     y_reg,
                     y_reg_mask,
                     y_bin,
                     y_bin_mask,
+                    apgar_class_weights,
                     pos_weight,
                     cfg.train.regression_loss_weight,
                     cfg.train.binary_loss_weight,
@@ -532,10 +632,12 @@ def main() -> None:
             val_loader,
             device,
             use_amp,
+            apgar_class_weights,
             pos_weight,
             cfg.train.regression_loss_weight,
             cfg.train.binary_loss_weight,
             train_ds.apgar_target_names,
+            train_ds.categorical_target_names,
             train_ds.regression_target_names,
             train_ds.binary_target_names,
             cfg.train.monitor_binary_tasks,
@@ -579,6 +681,7 @@ def main() -> None:
                     "model_state_dict": model.state_dict(),
                     "val_loss": float(val_metrics["loss"]),
                     "monitor_binary_pr_auc": monitor,
+                    "apgar_class_weight_power": cfg.train.apgar_class_weight_power,
                     "train_signal_means": means.tolist(),
                     "train_signal_stds": stds.tolist(),
                 },
@@ -610,10 +713,12 @@ def main() -> None:
         val_loader,
         device,
         use_amp,
+        apgar_class_weights,
         pos_weight,
         cfg.train.regression_loss_weight,
         cfg.train.binary_loss_weight,
         train_ds.apgar_target_names,
+        train_ds.categorical_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
         cfg.train.monitor_binary_tasks,
@@ -623,10 +728,12 @@ def main() -> None:
         test_loader,
         device,
         use_amp,
+        apgar_class_weights,
         pos_weight,
         cfg.train.regression_loss_weight,
         cfg.train.binary_loss_weight,
         train_ds.apgar_target_names,
+        train_ds.categorical_target_names,
         train_ds.regression_target_names,
         train_ds.binary_target_names,
         cfg.train.monitor_binary_tasks,

@@ -113,12 +113,16 @@ def _build_split_npz(
     tab_X: np.ndarray,
     apgar_targets: np.ndarray,
     apgar_mask: np.ndarray,
+    cat_targets: np.ndarray,
+    cat_mask: np.ndarray,
     reg_targets: np.ndarray,
     reg_mask: np.ndarray,
     bin_targets: np.ndarray,
     bin_mask: np.ndarray,
     feature_names: list[str],
     apgar_names: list[str],
+    categorical_names: list[str],
+    categorical_class_counts: list[int],
     regression_names: list[str],
     binary_names: list[str],
     out_path: Path,
@@ -133,6 +137,8 @@ def _build_split_npz(
     X_tab = np.zeros((total_babies, tab_X.shape[1]), dtype=np.float32)
     y_apgar = np.zeros((total_babies, apgar_targets.shape[1]), dtype=np.int64)
     y_apgar_mask = np.zeros((total_babies, apgar_mask.shape[1]), dtype=np.float32)
+    y_cat = np.zeros((total_babies, cat_targets.shape[1]), dtype=np.int64)
+    y_cat_mask = np.zeros((total_babies, cat_mask.shape[1]), dtype=np.float32)
     y_reg = np.zeros((total_babies, reg_targets.shape[1]), dtype=np.float32)
     y_reg_mask = np.zeros((total_babies, reg_mask.shape[1]), dtype=np.float32)
     y_bin = np.zeros((total_babies, bin_targets.shape[1]), dtype=np.float32)
@@ -158,6 +164,8 @@ def _build_split_npz(
         X_tab[kept] = tab_X[src]
         y_apgar[kept] = apgar_targets[src]
         y_apgar_mask[kept] = apgar_mask[src]
+        y_cat[kept] = cat_targets[src]
+        y_cat_mask[kept] = cat_mask[src]
         y_reg[kept] = reg_targets[src]
         y_reg_mask[kept] = reg_mask[src]
         y_bin[kept] = bin_targets[src]
@@ -199,6 +207,8 @@ def _build_split_npz(
         X_tab=X_tab[:kept],
         y_apgar=y_apgar[:kept],
         y_apgar_mask=y_apgar_mask[:kept],
+        y_cat=y_cat[:kept],
+        y_cat_mask=y_cat_mask[:kept],
         y_reg=y_reg[:kept],
         y_reg_mask=y_reg_mask[:kept],
         y_bin=y_bin[:kept],
@@ -207,6 +217,8 @@ def _build_split_npz(
         sequence_channels=np.array(channel_names),
         tabular_feature_names=np.array(feature_names),
         apgar_target_names=np.array(apgar_names),
+        categorical_target_names=np.array(categorical_names),
+        categorical_class_counts=np.array(categorical_class_counts, dtype=np.int32),
         regression_target_names=np.array(regression_names),
         binary_target_names=np.array(binary_names),
         n_steps=np.array([n_steps], dtype=np.int32),
@@ -253,6 +265,8 @@ def build_ctg2_multimodal_npz_files(
 
     target_spec = MultitaskTargetSpec(
         apgar_names=list(registry_cfg.apgar_outputs),
+        categorical_names=list(registry_cfg.categorical_outputs),
+        categorical_levels={},
         continuous_names=list(registry_cfg.continuous_outputs),
         binary_names=list(registry_cfg.binary_outputs),
         binary_names_missing_as_false=list(registry_cfg.binary_outputs_missing_as_false),
@@ -260,13 +274,28 @@ def build_ctg2_multimodal_npz_files(
 
     train_df = merged[merged["split"] == "train"].copy()
     encoder = fit_tabular_encoder(train_df, registry_cfg)
+    categorical_levels: dict[str, list[str]] = {}
+    for col in registry_cfg.categorical_outputs:
+        raw = train_df[col].astype("string")
+        levels = sorted(str(x) for x in raw.dropna().unique().tolist())
+        if not levels:
+            raise ValueError(f"Categorical output {col} has no observed training levels.")
+        categorical_levels[col] = levels
+    target_spec = MultitaskTargetSpec(
+        apgar_names=list(registry_cfg.apgar_outputs),
+        categorical_names=list(registry_cfg.categorical_outputs),
+        categorical_levels=categorical_levels,
+        continuous_names=list(registry_cfg.continuous_outputs),
+        binary_names=list(registry_cfg.binary_outputs),
+        binary_names_missing_as_false=list(registry_cfg.binary_outputs_missing_as_false),
+    )
 
-    split_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]] = {}
+    split_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]] = {}
     for split_name in ["train", "val", "test"]:
         split_part = merged[merged["split"] == split_name].copy().sort_values("BabyID").reset_index(drop=True)
         X_tab = transform_tabular_inputs(split_part, encoder)
-        y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = build_targets(split_part, target_spec)
-        split_arrays[split_name] = (X_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part)
+        y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = build_targets(split_part, target_spec)
+        split_arrays[split_name] = (X_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part)
 
     train_X_tab = split_arrays["train"][0]
     other_tabs = [split_arrays["val"][0], split_arrays["test"][0]]
@@ -274,8 +303,9 @@ def build_ctg2_multimodal_npz_files(
 
     out_dir = Path(output_dir)
     stats: list[CTG2SplitBuildStats] = []
+    categorical_class_counts = [len(target_spec.categorical_levels[name]) for name in target_spec.categorical_names]
     for split_name in ["train", "val", "test"]:
-        X_tab, y_apgar, y_apgar_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part = split_arrays[split_name]
+        X_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask, split_part = split_arrays[split_name]
         out_path = out_dir / f"{split_name}.npz"
         stats.append(
             _build_split_npz(
@@ -285,12 +315,16 @@ def build_ctg2_multimodal_npz_files(
                 tab_X=X_tab,
                 apgar_targets=y_apgar,
                 apgar_mask=y_apgar_mask,
+                cat_targets=y_cat,
+                cat_mask=y_cat_mask,
                 reg_targets=y_reg,
                 reg_mask=y_reg_mask,
                 bin_targets=y_bin,
                 bin_mask=y_bin_mask,
                 feature_names=encoder.feature_names,
                 apgar_names=target_spec.apgar_names,
+                categorical_names=target_spec.categorical_names,
+                categorical_class_counts=categorical_class_counts,
                 regression_names=target_spec.continuous_names,
                 binary_names=target_spec.binary_names,
                 out_path=out_path,

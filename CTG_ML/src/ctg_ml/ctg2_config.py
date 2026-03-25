@@ -43,6 +43,7 @@ class CTG2RegistryConfig:
     categorical_other_min_frequency: int
     country_top_k: int
     apgar_outputs: list[str]
+    categorical_outputs: list[str]
     continuous_outputs: list[str]
     binary_outputs: list[str]
     binary_outputs_missing_as_false: list[str]
@@ -63,6 +64,7 @@ class CTG2TrainConfig:
     batch_size: int
     epochs: int
     weight_decay: float
+    apgar_class_weight_power: float
     regression_loss_weight: float
     binary_loss_weight: float
     gradient_clip_norm: float
@@ -133,6 +135,7 @@ def load_ctg2_config(path: str | Path = "configs/ctg2_multimodal.toml") -> CTG2P
             categorical_other_min_frequency=int(registry["categorical_other_min_frequency"]),
             country_top_k=int(registry["country_top_k"]),
             apgar_outputs=[str(x) for x in registry["apgar_outputs"]],
+            categorical_outputs=[str(x) for x in registry.get("categorical_outputs", [])],
             continuous_outputs=[str(x) for x in registry["continuous_outputs"]],
             binary_outputs=[str(x) for x in registry["binary_outputs"]],
             binary_outputs_missing_as_false=[str(x) for x in registry.get("binary_outputs_missing_as_false", [])],
@@ -149,6 +152,7 @@ def load_ctg2_config(path: str | Path = "configs/ctg2_multimodal.toml") -> CTG2P
             batch_size=int(train["batch_size"]),
             epochs=int(train["epochs"]),
             weight_decay=float(train["weight_decay"]),
+            apgar_class_weight_power=float(train.get("apgar_class_weight_power", 0.0)),
             regression_loss_weight=float(train["regression_loss_weight"]),
             binary_loss_weight=float(train["binary_loss_weight"]),
             gradient_clip_norm=float(train["gradient_clip_norm"]),

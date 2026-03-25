@@ -21,6 +21,8 @@ class TabularEncoder:
 @dataclass(frozen=True)
 class MultitaskTargetSpec:
     apgar_names: list[str]
+    categorical_names: list[str]
+    categorical_levels: dict[str, list[str]]
     continuous_names: list[str]
     binary_names: list[str]
     binary_names_missing_as_false: list[str]
@@ -53,6 +55,7 @@ def load_registry_for_multimodal(
     usecols += registry_cfg.input_categorical
     usecols += registry_cfg.input_excluded_due_to_leakage
     usecols += registry_cfg.apgar_outputs
+    usecols += registry_cfg.categorical_outputs
     usecols += registry_cfg.continuous_outputs
     usecols += registry_cfg.binary_outputs
     df = pd.read_csv(registry_csv, usecols=sorted(set(usecols)))
@@ -68,7 +71,7 @@ def load_registry_for_multimodal(
         if col in df.columns:
             df[col] = _clean_boolean_series(df[col])
 
-    for col in registry_cfg.input_categorical:
+    for col in registry_cfg.input_categorical + registry_cfg.categorical_outputs:
         if col in df.columns:
             df[col] = df[col].astype("string").str.strip()
             df.loc[df[col].isin(["", "<NA>", "nan", "None"]), col] = pd.NA
@@ -201,7 +204,7 @@ def normalize_tabular_inplace(
 def build_targets(
     df: pd.DataFrame,
     target_spec: MultitaskTargetSpec,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     apgar_targets = np.zeros((len(df), len(target_spec.apgar_names)), dtype=np.int64)
     apgar_mask = np.zeros((len(df), len(target_spec.apgar_names)), dtype=np.float32)
     for idx, col in enumerate(target_spec.apgar_names):
@@ -210,6 +213,18 @@ def build_targets(
         clipped = vals.clip(lower=0, upper=10)
         apgar_targets[:, idx] = clipped.fillna(0).astype(int).to_numpy(dtype=np.int64)
         apgar_mask[:, idx] = present.astype(np.float32)
+
+    cat_targets = np.zeros((len(df), len(target_spec.categorical_names)), dtype=np.int64)
+    cat_mask = np.zeros((len(df), len(target_spec.categorical_names)), dtype=np.float32)
+    for idx, col in enumerate(target_spec.categorical_names):
+        levels = target_spec.categorical_levels.get(col, [])
+        raw = df[col].astype("string")
+        present = raw.notna().to_numpy()
+        mapping = {level: i for i, level in enumerate(levels)}
+        encoded = raw.map(mapping)
+        valid = present & encoded.notna().to_numpy()
+        cat_targets[:, idx] = encoded.fillna(0).astype(int).to_numpy(dtype=np.int64)
+        cat_mask[:, idx] = valid.astype(np.float32)
 
     reg_targets = np.zeros((len(df), len(target_spec.continuous_names)), dtype=np.float32)
     reg_mask = np.zeros_like(reg_targets, dtype=np.float32)
@@ -230,7 +245,7 @@ def build_targets(
         bin_targets[:, idx] = vals.fillna(False).astype(np.float32).to_numpy()
         bin_mask[:, idx] = present.astype(np.float32)
 
-    return apgar_targets, apgar_mask, reg_targets, reg_mask, bin_targets, bin_mask
+    return apgar_targets, apgar_mask, cat_targets, cat_mask, reg_targets, reg_mask, bin_targets, bin_mask
 
 
 def merge_splits_with_registry(
