@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import random
 
@@ -111,6 +112,34 @@ def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarr
         masks = X[:, 2:, :]
         masks[~np.isfinite(masks)] = 0.0
         X[:, 2:, :] = masks
+
+
+def resolve_tabular_feature_indices(feature_names: list[str], raw_columns: list[str]) -> list[int]:
+    indices: list[int] = []
+    raw_set = set(raw_columns)
+    for idx, name in enumerate(feature_names):
+        if name in raw_set:
+            indices.append(idx)
+            continue
+        for col in raw_columns:
+            if name == f"{col}__missing" or name == f"{col}__other" or name.startswith(f"{col}=="):
+                indices.append(idx)
+                break
+    return sorted(set(indices))
+
+
+def ablate_tabular_columns_inplace(
+    datasets: list[MultimodalNPZDataset],
+    train_feature_mean: np.ndarray,
+    feature_names: list[str],
+    raw_columns: list[str],
+) -> list[int]:
+    indices = resolve_tabular_feature_indices(feature_names, raw_columns)
+    if not indices:
+        raise ValueError(f"None of the requested ablation columns matched encoded features: {raw_columns}")
+    for ds in datasets:
+        ds.X_tab[:, indices] = train_feature_mean[indices]
+    return indices
 
 
 def compute_apgar_class_weights(
@@ -441,10 +470,19 @@ def main() -> None:
         action="store_true",
         help="CTG-only ablation: replace all registry/tabular inputs with the train-set mean feature vector.",
     )
+    parser.add_argument(
+        "--ablate-tabular-columns",
+        default=None,
+        help="Comma-separated raw registry input columns to ablate by replacing their encoded features with the train-set mean values.",
+    )
+    parser.add_argument("--seed-override", type=int, default=None, help="Override training seed for repeated ablation runs.")
+    parser.add_argument("--run-name", default=None, help="Optional suffix used for checkpoint/history/metrics filenames.")
+    parser.add_argument("--metrics-out", default=None, help="Optional JSON path for final VAL/TEST metrics.")
     args = parser.parse_args()
 
     cfg = load_ctg2_config(args.config)
-    set_training_seed(cfg.train.seed, cfg.train.deterministic)
+    train_seed = int(args.seed_override) if args.seed_override is not None else int(cfg.train.seed)
+    set_training_seed(train_seed, cfg.train.deterministic)
 
     out_dir = cfg.sequence.output_dir
     train_npz = Path(args.train_npz) if args.train_npz else out_dir / "train.npz"
@@ -463,9 +501,16 @@ def main() -> None:
     normalize_sequences_inplace(val_ds.X_seq, means, stds)
     normalize_sequences_inplace(test_ds.X_seq, means, stds)
 
-    if args.ablate_sequence and args.ablate_tabular:
-        raise ValueError("Cannot use both --ablate-sequence and --ablate-tabular at the same time.")
+    ablate_columns = []
+    if args.ablate_tabular_columns:
+        ablate_columns = [x.strip() for x in args.ablate_tabular_columns.split(",") if x.strip()]
+
+    if sum(bool(x) for x in [args.ablate_sequence, args.ablate_tabular, bool(ablate_columns)]) > 1:
+        raise ValueError("Use at most one of --ablate-sequence, --ablate-tabular, or --ablate-tabular-columns.")
+
     modality_mode = "multimodal"
+    ablated_feature_indices: list[int] = []
+    train_tab_mean = train_ds.X_tab.mean(axis=0, keepdims=True).astype(np.float32)
     if args.ablate_sequence:
         modality_mode = "registry_only"
         train_ds.X_seq.fill(0.0)
@@ -473,10 +518,17 @@ def main() -> None:
         test_ds.X_seq.fill(0.0)
     elif args.ablate_tabular:
         modality_mode = "ctg_only"
-        train_tab_mean = train_ds.X_tab.mean(axis=0, keepdims=True).astype(np.float32)
         train_ds.X_tab[:] = train_tab_mean
         val_ds.X_tab[:] = train_tab_mean
         test_ds.X_tab[:] = train_tab_mean
+    elif ablate_columns:
+        modality_mode = "tabular_ablation"
+        ablated_feature_indices = ablate_tabular_columns_inplace(
+            [train_ds, val_ds, test_ds],
+            train_tab_mean[0],
+            train_ds.tabular_feature_names,
+            ablate_columns,
+        )
 
     device = resolve_device(args.device)
     use_cuda = device.type == "cuda"
@@ -498,7 +550,10 @@ def main() -> None:
         f"toco mean/std={means[1]:.3f}/{stds[1]:.3f}"
     )
     print(f"Modality mode: {modality_mode}")
-    print(f"Training seed: {cfg.train.seed} (deterministic={cfg.train.deterministic})")
+    if ablate_columns:
+        print(f"Ablated raw tabular columns: {ablate_columns}")
+        print(f"Affected encoded tabular features: {len(ablated_feature_indices)}")
+    print(f"Training seed: {train_seed} (deterministic={cfg.train.deterministic})")
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
     train_loader = DataLoader(train_ds, batch_size=cfg.train.batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda)
@@ -540,7 +595,9 @@ def main() -> None:
 
     ckpt_dir = cfg.paths.artifacts_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_path = ckpt_dir / f"best_ctg2_multimodal_{modality_mode}.pt"
+    run_label = args.run_name.strip() if args.run_name else modality_mode
+    safe_run_label = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_label)
+    ckpt_path = ckpt_dir / f"best_ctg2_multimodal_{safe_run_label}.pt"
     best_monitor = float("-inf")
     best_monitor_for_stop = float("-inf")
     epochs_since_improve = 0
@@ -700,7 +757,7 @@ def main() -> None:
             )
             break
 
-    history_path = cfg.paths.artifacts_dir / f"ctg2_multimodal_history_{modality_mode}.csv"
+    history_path = cfg.paths.artifacts_dir / f"ctg2_multimodal_history_{safe_run_label}.csv"
     pd.DataFrame(history_rows).to_csv(history_path, index=False)
     print(f"\nSaved training history to {history_path}")
 
@@ -740,6 +797,25 @@ def main() -> None:
     )
     format_eval("VAL", val_metrics)
     format_eval("TEST", test_metrics)
+
+    if args.metrics_out:
+        metrics_out = Path(args.metrics_out)
+        metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "run_name": safe_run_label,
+            "modality_mode": modality_mode,
+            "seed": train_seed,
+            "ablate_sequence": bool(args.ablate_sequence),
+            "ablate_tabular": bool(args.ablate_tabular),
+            "ablated_tabular_columns": ablate_columns,
+            "ablated_feature_indices": ablated_feature_indices,
+            "checkpoint_path": str(ckpt_path),
+            "history_path": str(history_path),
+            "val_metrics": val_metrics,
+            "test_metrics": test_metrics,
+        }
+        metrics_out.write_text(json.dumps(payload, indent=2))
+        print(f"Saved metrics JSON to {metrics_out}")
 
 
 if __name__ == "__main__":
