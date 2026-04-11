@@ -1,26 +1,29 @@
 [project]
 name = "ictg"
 version = "0.1.0"
-description = "Add your description here"
+description = "CTG conversion utilities"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
+    "libarchive-c>=5.0",
     "pandas>=2.3.3",
     "pandas-stubs>=2.3.2",
-    "pyarrow>=21.0.0",
-    "pyarrow-stubs>=20.0.0",
+    "pyarrow>=23.0.1",
+    "pyarrow-stubs>=20.0.0.20251215",
     "pydantic>=2.11.10",
-    "libarchive-c>=5.0",
-    "zipfile-deflate64>=0.2.0",
     "questionary>=2.0.0",
+    "zipfile-deflate64>=0.2.0",
 ]
 
 [project.scripts]
 ictg = "ictg.convert_raw_ctg_to_dataframe:main"
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=80"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

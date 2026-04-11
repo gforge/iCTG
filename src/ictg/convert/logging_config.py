@@ -49,7 +49,7 @@ def setup_logging(
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-        logger.info(f"Logging to file: {log_file}")
+        logger.info("Logging to file: %s", log_file)
 
     return logger
 
