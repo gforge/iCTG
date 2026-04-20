@@ -24,6 +24,28 @@ BINARY_OUTCOMES = [
 ]
 SUMMARY_OUTCOMES = ["apgar_mean_below7", *APGAR_OUTCOMES, *BINARY_OUTCOMES]
 
+OUTCOME_LABELS = {
+    "apgar_mean_below7": "Apgar mean (<7 average)",
+    "apgar1_below7": "Apgar 1 min < 7",
+    "apgar5_below7": "Apgar 5 min < 7",
+    "apgar10_below7": "Apgar 10 min < 7",
+    "ph_navel_below7": "Cord pH < 7",
+    "shoulder_dystocia": "Shoulder dystocia",
+    "treatment_for_hypoglycemia": "Treatment for hypoglycemia",
+    "neonatal_sepsis_or_pneumonia": "Neonatal sepsis/pneumonia",
+    "respiratorbehandling": "Respirator treatment",
+}
+
+ABLATION_LABELS = {
+    "baseline": "Baseline",
+    "CTG": "CTG removed",
+    "all_registry": "All registry removed",
+    "maternal_background": "Maternal background removed",
+    "smoking": "Smoking-related variables removed",
+    "maternal_conditions": "Maternal conditions removed",
+    "labour_context": "Labour context removed",
+}
+
 
 @dataclass(frozen=True)
 class AblationSpec:
@@ -116,18 +138,30 @@ def _dedupe_specs(specs: list[AblationSpec]) -> list[AblationSpec]:
     return out
 
 
-def _extract_test_roc_auc(payload: dict) -> dict[str, float]:
+def _filter_specs(specs: list[AblationSpec], requested_names: list[str] | None) -> list[AblationSpec]:
+    if not requested_names:
+        return specs
+    requested = {name.strip() for name in requested_names if name.strip()}
+    requested.add("baseline")
+    filtered = [spec for spec in specs if spec.name in requested]
+    missing = sorted(requested - {spec.name for spec in filtered})
+    if missing:
+        raise ValueError(f"Unknown ablation names requested: {missing}")
+    return filtered
+
+
+def _extract_test_metric(payload: dict, metric_name: str) -> dict[str, float]:
     test = payload["test_metrics"]
     result: dict[str, float] = {}
     apgar_vals = []
     for name in APGAR_OUTCOMES:
-        val = float(test["derived_binary"].get(name, {}).get("roc_auc", float("nan")))
+        val = float(test["derived_binary"].get(name, {}).get(metric_name, float("nan")))
         result[name] = val
         if math.isfinite(val):
             apgar_vals.append(val)
     result["apgar_mean_below7"] = float(sum(apgar_vals) / len(apgar_vals)) if apgar_vals else float("nan")
     for name in BINARY_OUTCOMES:
-        result[name] = float(test["binary"].get(name, {}).get("roc_auc", float("nan")))
+        result[name] = float(test["binary"].get(name, {}).get(metric_name, float("nan")))
     return result
 
 
@@ -144,7 +178,74 @@ def _build_command(train_script: Path, config: str, device: str, seed: int, spec
     return cmd
 
 
-def run_study(config_path: str, device: str, seeds: list[int], mode: str, output_dir: Path, force: bool, show_inner_progress: bool) -> None:
+def _fmt_value(mean: float, sd: float, decimals: int = 3) -> str:
+    if pd.isna(mean):
+        return "NA"
+    if pd.isna(sd):
+        return f"{mean:.{decimals}f}"
+    return f"{mean:.{decimals}f} ± {sd:.{decimals}f}"
+
+
+def _build_readable_markdown(config_path: str, seeds: list[int], mode: str, summary_df: pd.DataFrame) -> str:
+    non_baseline = summary_df[summary_df["ablation"] != "baseline"].copy()
+    lines = [
+        "# CTG2 Ablation Study",
+        "",
+        f"- Config: `{config_path}`",
+        f"- Seeds: {', '.join(str(s) for s in seeds)}",
+        f"- Mode: {mode}",
+        "- Interpretation: positive drop means the removed input group was helping the model.",
+        "- Main comparison metric remains ROC-AUC. PR-AUC is included as a second view for rare outcomes.",
+        "",
+        "## Compact ROC-AUC Table",
+        "",
+        "| Ablation | Apgar mean | Apgar1 | Apgar5 | Apgar10 | pH<7 | Shoulder dystocia | Hypoglycemia | Sepsis/pneumonia | Respirator |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for _, row in non_baseline.iterrows():
+        lines.append(
+            "| "
+            + ABLATION_LABELS.get(row["ablation"], str(row["ablation"]))
+            + " | "
+            + " | ".join(
+                _fmt_value(row[f"{outcome}_mean_drop_roc_auc"], row[f"{outcome}_sd_drop_roc_auc"])
+                for outcome in SUMMARY_OUTCOMES
+            )
+            + " |"
+        )
+
+    lines.extend(["", "## Outcome Ranking By ROC-AUC Drop", ""])
+    for outcome in SUMMARY_OUTCOMES:
+        lines.append(f"### {OUTCOME_LABELS.get(outcome, outcome)}")
+        lines.append("")
+        lines.append("| Rank | Ablation | Mean ROC-AUC drop | Mean PR-AUC drop |")
+        lines.append("|---:|---|---:|---:|")
+        ranked = non_baseline.sort_values(by=f"{outcome}_mean_drop_roc_auc", ascending=False)
+        for i, (_, row) in enumerate(ranked.iterrows(), start=1):
+            lines.append(
+                f"| {i} | {ABLATION_LABELS.get(row['ablation'], str(row['ablation']))} | "
+                f"{_fmt_value(row[f'{outcome}_mean_drop_roc_auc'], row[f'{outcome}_sd_drop_roc_auc'])} | "
+                f"{_fmt_value(row[f'{outcome}_mean_drop_pr_auc'], row[f'{outcome}_sd_drop_pr_auc'])} |"
+            )
+        lines.append("")
+
+    lines.extend(["## Notes", ""])
+    lines.append("- Negative values mean the ablated run did slightly better than the baseline on that metric.")
+    lines.append("- With one seed, all standard deviations are 0 and small negative values are often just training noise.")
+    return "\n".join(lines)
+
+
+def run_study(
+    config_path: str,
+    device: str,
+    seeds: list[int],
+    mode: str,
+    output_dir: Path,
+    force: bool,
+    show_inner_progress: bool,
+    only_ablations: list[str] | None,
+) -> None:
     cfg = load_ctg2_config(config_path)
     grouped, single = _default_group_specs(cfg)
     if mode == "grouped":
@@ -153,6 +254,7 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
         specs = single
     else:
         specs = _dedupe_specs(grouped + single)
+    specs = _filter_specs(specs, only_ablations)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     train_script = Path(__file__).with_name("train_ctg2_multimodal.py")
@@ -183,7 +285,8 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
             cmd = _build_command(train_script, config_path, device, seed, spec, metrics_out, show_inner_progress)
             subprocess.run(cmd, check=True)
         payload = json.loads(metrics_out.read_text())
-        aucs = _extract_test_roc_auc(payload)
+        roc_aucs = _extract_test_metric(payload, "roc_auc")
+        pr_aucs = _extract_test_metric(payload, "pr_auc")
         elapsed = time.time() - start
         durations.append(elapsed)
         completed += 1
@@ -195,7 +298,8 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
             "metrics_json": str(metrics_out),
             "elapsed_seconds": round(elapsed, 2),
         }
-        row.update(aucs)
+        row.update({f"{k}_roc_auc": v for k, v in roc_aucs.items()})
+        row.update({f"{k}_pr_auc": v for k, v in pr_aucs.items()})
         raw_rows.append(row)
         avg = sum(durations) / len(durations)
         remaining = _format_duration(avg * (total_runs - completed)) if completed < total_runs else "0s"
@@ -217,11 +321,14 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
             "columns": row["columns"],
         }
         for outcome in SUMMARY_OUTCOMES:
-            base_val = float(baseline[outcome])
-            cur_val = float(row[outcome])
-            out[f"{outcome}_baseline"] = base_val
-            out[f"{outcome}_ablated"] = cur_val
-            out[f"{outcome}_drop"] = base_val - cur_val if math.isfinite(base_val) and math.isfinite(cur_val) else float("nan")
+            for metric in ["roc_auc", "pr_auc"]:
+                base_val = float(baseline[f"{outcome}_{metric}"])
+                cur_val = float(row[f"{outcome}_{metric}"])
+                out[f"{outcome}_{metric}_baseline"] = base_val
+                out[f"{outcome}_{metric}_ablated"] = cur_val
+                out[f"{outcome}_{metric}_drop"] = (
+                    base_val - cur_val if math.isfinite(base_val) and math.isfinite(cur_val) else float("nan")
+                )
         delta_rows.append(out)
     delta_df = pd.DataFrame(delta_rows)
     delta_csv = output_dir / "ablation_seed_deltas.csv"
@@ -231,9 +338,12 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
     for ablation, part in delta_df.groupby("ablation", sort=False):
         record = {"ablation": ablation, "kind": part["kind"].iloc[0], "columns": part["columns"].iloc[0]}
         for outcome in SUMMARY_OUTCOMES:
-            vals = pd.to_numeric(part[f"{outcome}_drop"], errors="coerce").dropna()
-            record[f"{outcome}_mean_drop_roc_auc"] = float(vals.mean()) if not vals.empty else float("nan")
-            record[f"{outcome}_sd_drop_roc_auc"] = float(vals.std(ddof=1)) if len(vals) > 1 else (0.0 if len(vals) == 1 else float("nan"))
+            for metric in ["roc_auc", "pr_auc"]:
+                vals = pd.to_numeric(part[f"{outcome}_{metric}_drop"], errors="coerce").dropna()
+                record[f"{outcome}_mean_drop_{metric}"] = float(vals.mean()) if not vals.empty else float("nan")
+                record[f"{outcome}_sd_drop_{metric}"] = (
+                    float(vals.std(ddof=1)) if len(vals) > 1 else (0.0 if len(vals) == 1 else float("nan"))
+                )
         summary_records.append(record)
     summary_df = pd.DataFrame(summary_records)
     summary_csv = output_dir / "ablation_summary.csv"
@@ -252,9 +362,9 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for _, row in summary_df.iterrows():
-        def fmt(outcome: str) -> str:
-            mean = row[f"{outcome}_mean_drop_roc_auc"]
-            sd = row[f"{outcome}_sd_drop_roc_auc"]
+        def fmt(outcome: str, metric: str) -> str:
+            mean = row[f"{outcome}_mean_drop_{metric}"]
+            sd = row[f"{outcome}_sd_drop_{metric}"]
             if pd.isna(mean):
                 return "NA"
             if pd.isna(sd):
@@ -262,15 +372,31 @@ def run_study(config_path: str, device: str, seeds: list[int], mode: str, output
             return f"{mean:.4f} ± {sd:.4f}"
 
         md_lines.append(
-            f"| {row['ablation']} | {fmt('apgar_mean_below7')} | {fmt('apgar1_below7')} | {fmt('apgar5_below7')} | {fmt('apgar10_below7')} | {fmt('ph_navel_below7')} | {fmt('shoulder_dystocia')} | {fmt('treatment_for_hypoglycemia')} | {fmt('neonatal_sepsis_or_pneumonia')} | {fmt('respiratorbehandling')} |"
+            f"| {row['ablation']} | {fmt('apgar_mean_below7', 'roc_auc')} | {fmt('apgar1_below7', 'roc_auc')} | {fmt('apgar5_below7', 'roc_auc')} | {fmt('apgar10_below7', 'roc_auc')} | {fmt('ph_navel_below7', 'roc_auc')} | {fmt('shoulder_dystocia', 'roc_auc')} | {fmt('treatment_for_hypoglycemia', 'roc_auc')} | {fmt('neonatal_sepsis_or_pneumonia', 'roc_auc')} | {fmt('respiratorbehandling', 'roc_auc')} |"
+        )
+    md_lines.extend(
+        [
+            "",
+            "## Mean drop in test PR-AUC versus full baseline",
+            "",
+            "| Ablation | apgar_mean | apgar1 | apgar5 | apgar10 | ph_below7 | shoulder_dystocia | hypoglycemia | neonatal_sepsis_or_pneumonia | respiratorbehandling |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for _, row in summary_df.iterrows():
+        md_lines.append(
+            f"| {row['ablation']} | {fmt('apgar_mean_below7', 'pr_auc')} | {fmt('apgar1_below7', 'pr_auc')} | {fmt('apgar5_below7', 'pr_auc')} | {fmt('apgar10_below7', 'pr_auc')} | {fmt('ph_navel_below7', 'pr_auc')} | {fmt('shoulder_dystocia', 'pr_auc')} | {fmt('treatment_for_hypoglycemia', 'pr_auc')} | {fmt('neonatal_sepsis_or_pneumonia', 'pr_auc')} | {fmt('respiratorbehandling', 'pr_auc')} |"
         )
     md_path = output_dir / "ablation_summary.md"
     md_path.write_text("\n".join(md_lines))
+    readable_md_path = output_dir / "ablation_summary_readable.md"
+    readable_md_path.write_text(_build_readable_markdown(config_path, seeds, mode, summary_df))
 
     print(f"Wrote raw results: {raw_csv}")
     print(f"Wrote per-seed deltas: {delta_csv}")
     print(f"Wrote summary: {summary_csv}")
     print(f"Wrote markdown summary: {md_path}")
+    print(f"Wrote readable markdown summary: {readable_md_path}")
     print(f"Wrote group definitions: {definitions_path}")
 
 
@@ -280,6 +406,11 @@ def main() -> None:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seeds", default=None, help="Comma-separated seeds. Defaults to the training seed from config.")
     parser.add_argument("--mode", choices=["grouped", "single", "both"], default="grouped")
+    parser.add_argument(
+        "--only-ablations",
+        default=None,
+        help="Comma-separated ablation names to run. baseline is added automatically.",
+    )
     parser.add_argument("--output-dir", default=None, help="Directory for study outputs. Defaults to <artifacts_dir>/ablation_study/<mode>")
     parser.add_argument("--force", action="store_true", help="Rerun even if per-run metrics JSON already exists.")
     parser.add_argument("--show-inner-progress", action="store_true", help="Show the full batch progress bars from each underlying training run.")
@@ -287,8 +418,9 @@ def main() -> None:
 
     cfg = load_ctg2_config(args.config)
     seeds = [int(x.strip()) for x in args.seeds.split(",")] if args.seeds else [int(cfg.train.seed)]
+    only_ablations = [x.strip() for x in args.only_ablations.split(",")] if args.only_ablations else None
     output_dir = Path(args.output_dir) if args.output_dir else (cfg.paths.artifacts_dir / "ablation_study" / args.mode)
-    run_study(args.config, args.device, seeds, args.mode, output_dir, args.force, args.show_inner_progress)
+    run_study(args.config, args.device, seeds, args.mode, output_dir, args.force, args.show_inner_progress, only_ablations)
 
 
 if __name__ == "__main__":

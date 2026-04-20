@@ -204,6 +204,7 @@ def registry_match(
     meconium = _code_exact_expr(child_diag_col, ['P240'])
     shoulder_dystocia_child = _code_exact_expr(child_diag_col, ['P140', 'P141', 'P143', 'P148', 'P149'])
     hypoglycemia_treatment = _code_exact_expr(child_diag_col, ['P703', 'P704A', 'P704B', 'P708', 'P709'])
+    neonatal_anemia = _code_exact_expr(child_diag_col, ['P612', 'P613', 'P614'])
     severe_asphyxia_proc = _code_exact_expr(child_proc_col, ['DV034'])
     respirator_grav = (
         f"({_has_value_expr('ventilation_pa_mask_min')} OR "
@@ -249,11 +250,13 @@ def registry_match(
             {_int_expr('apgar_1_min')} AS apgar1,
             {_int_expr('apgar_5_min')} AS apgar5,
             {_int_expr('apgar_10_min')} AS apgar10,
+            ({_int_expr('gl_v_barn')} * 7 + {_int_expr('gl_d_barn')}) AS gestational_days,
             {_clean_text_expr('fodelseland')} AS fodelseland,
             {_clean_text_expr('utbildningsniva')} AS utbildningsniva,
             {_int_expr('para_mhv1')} AS para_mhv1,
             {_float_expr('langd_inskrivning_cm')} AS langd_inskrivning_cm,
             {_float_expr('bmi_inskrivning')} AS bmi_inskrivning,
+            CASE WHEN lower(coalesce({_clean_text_expr('tidigare_sectio')}, '')) = 'ja' THEN TRUE ELSE FALSE END AS previous_c_section,
             {smoke_pre} AS tobak_3_manader_fore_graviditet,
             {smoke_inskrivning} AS tobak_inskrivning,
             {smoke_w30} AS tobak_vecka_30_32,
@@ -305,6 +308,7 @@ def registry_match(
             ({severe_asphyxia_diag} OR {severe_asphyxia_proc}) AS severe_birth_asphyxia,
             {meconium} AS meconium_aspiration_syndrome,
             {hypoglycemia_treatment} AS treatment_for_hypoglycemia,
+            {neonatal_anemia} AS neonatal_anemia,
             {respirator_grav} AS respiratorbehandling_gravniva
         FROM reg_raw
         WHERE personnummer_mor IS NOT NULL
@@ -358,11 +362,13 @@ def registry_match(
             apgar1,
             apgar5,
             apgar10,
+            gestational_days,
             fodelseland,
             utbildningsniva,
             para_mhv1,
             langd_inskrivning_cm,
             bmi_inskrivning,
+            previous_c_section,
             tobak_3_manader_fore_graviditet,
             tobak_inskrivning,
             tobak_vecka_30_32,
@@ -390,6 +396,7 @@ def registry_match(
             severe_birth_asphyxia,
             meconium_aspiration_syndrome,
             treatment_for_hypoglycemia,
+            neonatal_anemia,
             respiratorbehandling_gravniva,
             substr(reg_digits, 1, 8) || '-' || substr(reg_digits, 9, 4) AS PatientID
         FROM reg
@@ -419,11 +426,13 @@ def registry_match(
             r.apgar1,
             r.apgar5,
             r.apgar10,
+            r.gestational_days,
             r.fodelseland,
             r.utbildningsniva,
             r.para_mhv1,
             r.langd_inskrivning_cm,
             r.bmi_inskrivning,
+            r.previous_c_section,
             r.tobak_3_manader_fore_graviditet,
             r.tobak_inskrivning,
             r.tobak_vecka_30_32,
@@ -451,6 +460,7 @@ def registry_match(
             r.severe_birth_asphyxia,
             r.meconium_aspiration_syndrome,
             r.treatment_for_hypoglycemia,
+            r.neonatal_anemia,
             s.highest_hie,
             s.hie,
             s.intracranial_haemorrhage,
@@ -501,11 +511,13 @@ def registry_match(
             r.apgar1,
             r.apgar5,
             r.apgar10,
+            r.gestational_days,
             r.fodelseland,
             r.utbildningsniva,
             r.para_mhv1,
             r.langd_inskrivning_cm,
             r.bmi_inskrivning,
+            r.previous_c_section,
             r.tobak_3_manader_fore_graviditet,
             r.tobak_inskrivning,
             r.tobak_vecka_30_32,
@@ -533,6 +545,7 @@ def registry_match(
             r.severe_birth_asphyxia,
             r.meconium_aspiration_syndrome,
             r.treatment_for_hypoglycemia,
+            r.neonatal_anemia,
             r.highest_hie,
             r.hie,
             r.intracranial_haemorrhage,
@@ -602,11 +615,13 @@ def registry_match(
                 apgar1,
                 apgar5,
                 apgar10,
+                gestational_days,
                 fodelseland,
                 utbildningsniva,
                 para_mhv1,
                 langd_inskrivning_cm,
                 bmi_inskrivning,
+                previous_c_section,
                 tobak_3_manader_fore_graviditet,
                 tobak_inskrivning,
                 tobak_vecka_30_32,
@@ -634,6 +649,7 @@ def registry_match(
                 severe_birth_asphyxia,
                 meconium_aspiration_syndrome,
                 treatment_for_hypoglycemia,
+                neonatal_anemia,
                 highest_hie,
                 hie,
                 intracranial_haemorrhage,

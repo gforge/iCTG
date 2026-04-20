@@ -10,11 +10,11 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from config import (
-    DEFAULT_PARQUET_PATHS,
     DEFAULT_PARTITION_COLUMNS,
     DEFAULT_PARTITION_OUTPUT_DIR,
     DEFAULT_PARTITION_REPORT_EVERY,
     DEFAULT_REDUCTION_ROOT,
+    DEFAULT_STAGE0_DIR,
     DEFAULT_STAGE1_CUTOFF_DATE,
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
@@ -54,13 +54,26 @@ def _column_or_default(batch: pa.RecordBatch, name: str, value_type: pa.DataType
     return pa.nulls(batch.num_rows, type=value_type)
 
 
+def _resolve_raw_parquet_files(input_dir: str | Path) -> list[str]:
+    input_dir = Path(input_dir)
+    if not input_dir.exists():
+        raise FileNotFoundError(f"Raw input directory not found: {input_dir}")
+
+    parquet_files = sorted(str(path) for path in input_dir.glob('*.parquet') if path.is_file())
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in raw input directory: {input_dir}")
+    return parquet_files
+
+
 def stage1_timefilter(
-    input_paths: list[str | Path],
+    input_dir: str | Path,
     output_dir: str | Path,
     cutoff_date: str,
     batch_size: int = 65536,
     report_every_batches: int = DEFAULT_PARTITION_REPORT_EVERY,
 ) -> None:
+    input_paths = _resolve_raw_parquet_files(input_dir)
+    print(f"Stage1: reading {len(input_paths)} raw parquet files from {input_dir}")
     dataset = ds.dataset(input_paths, format="parquet")
     cutoff_dt = _parse_date(cutoff_date)
     filter_expr = ds.field("Timestamp") >= cutoff_dt
@@ -770,7 +783,7 @@ def main() -> None:
 
     if args.stage == "stage1":
         stage1_timefilter(
-            input_paths=args.input or DEFAULT_PARQUET_PATHS,
+            input_dir=(args.input[0] if args.input else DEFAULT_STAGE0_DIR),
             output_dir=args.output or DEFAULT_STAGE1_DIR,
             cutoff_date=args.cutoff_date,
             batch_size=args.batch_size,

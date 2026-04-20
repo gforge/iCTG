@@ -6,24 +6,10 @@ from __future__ import annotations
 DEFAULT_PATIENT_CSV = "/home/lukas-uggla/Documents/Data/gravniva.csv"
 # SNQ registry data (Excel or CSV).
 DEFAULT_SNQ_FILE = "/home/lukas-uggla/Documents/Data/SNQ data.xlsx"
-# Raw parquet files with CTG data (can be absolute paths).
-DEFAULT_PARQUET_PATHS = [
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-22 10_14_42.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-22 10_27_33.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-24 14_11_28.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-26 07_40_48.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-27 06_09_16.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-29 15_41_03.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-05-31 16_07_42.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-06-02 13_00_16.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-06-03 23_02_53.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-06-08 11_07_58.parquet",
-    "/home/lukas-uggla/Documents/Data/Export_2025-06-10 09_23_30.parquet"
-]
-
-
 # Root directory for staged data reduction outputs.
 DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
+# Raw CTG parquet input directory. Stage 1 reads every parquet file found here.
+DEFAULT_STAGE0_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_0_raw"
 # Stage directories (derived from DEFAULT_REDUCTION_ROOT).
 DEFAULT_STAGE1_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_1_timefilter"
 DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
