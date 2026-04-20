@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""CLI entrypoint for streaming raw CTG JSON exports into parquet."""
+
 from __future__ import annotations
 
 import argparse
@@ -78,6 +80,7 @@ def _log_failures(logger: logging.Logger, failure_tracker: FailureTracker) -> No
 
 
 def convert_raw_ctg() -> None:
+    """Parse CLI arguments and run preview and/or parquet conversion."""
     ap = argparse.ArgumentParser(
         description=(
             f"Stream-parse concatenated JSON from {JSON_SUFFIX}/{ZIP_SUFFIX}, validate with "
@@ -105,6 +108,17 @@ def convert_raw_ctg() -> None:
         help="Write one Parquet per input into this directory (constant memory)",
     )
     ap.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip inputs whose final parquet output already exists.",
+    )
+    ap.add_argument(
+        "--parquet-batch-size",
+        type=int,
+        default=50_000,
+        help="Maximum records kept in memory before flushing a parquet batch.",
+    )
+    ap.add_argument(
         "--log-dir",
         type=Path,
         default=None,
@@ -113,10 +127,20 @@ def convert_raw_ctg() -> None:
     args = ap.parse_args()
 
     # Set up logging
-    log_dir = args.log_dir if args.log_dir else Path("data/log")
+    log_dir = Path("data/log")
+    if args.parquet_out is not None:
+        log_dir = args.parquet_out
+    if args.log_dir is not None:
+        log_dir = args.log_dir
     logger = setup_logging(log_dir=log_dir)
     failure_tracker = FailureTracker()
     logger.info("Starting conversion with args: %s", args)
+    log_path = _get_log_file_path(logger)
+    if log_path is not None:
+        logger.info("Active log file: %s", log_path)
+
+    if args.parquet_batch_size <= 0:
+        raise ValueError("--parquet-batch-size must be greater than 0")
 
     if args.preview:
         df = dataframe_from_glob(
@@ -138,6 +162,8 @@ def convert_raw_ctg() -> None:
             args.inputs,
             args.parquet_out,
             args.zip_member,
+            batch_size=args.parquet_batch_size,
+            skip_existing=args.skip_existing,
             failure_tracker=failure_tracker,
         )
         logger.info("Conversion completed successfully")
