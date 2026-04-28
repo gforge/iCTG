@@ -8,6 +8,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 from config import (
     DEFAULT_PARTITION_COLUMNS,
@@ -65,6 +66,15 @@ def _resolve_raw_parquet_files(input_dir: str | Path) -> list[str]:
     return parquet_files
 
 
+def _unify_parquet_schemas(input_paths: list[str]) -> pa.Schema:
+    schemas = [pq.ParquetFile(path).schema_arrow for path in input_paths]
+    try:
+        return pa.unify_schemas(schemas, promote_options="permissive")
+    except TypeError:
+        # Older PyArrow versions do not support permissive promotion.
+        return pa.unify_schemas(schemas)
+
+
 def stage1_timefilter(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -74,7 +84,8 @@ def stage1_timefilter(
 ) -> None:
     input_paths = _resolve_raw_parquet_files(input_dir)
     print(f"Stage1: reading {len(input_paths)} raw parquet files from {input_dir}")
-    dataset = ds.dataset(input_paths, format="parquet")
+    schema = _unify_parquet_schemas(input_paths)
+    dataset = ds.dataset(input_paths, format="parquet", schema=schema)
     cutoff_dt = _parse_date(cutoff_date)
     filter_expr = ds.field("Timestamp") >= cutoff_dt
     scanner = dataset.scanner(filter=filter_expr, batch_size=batch_size)
@@ -98,7 +109,7 @@ def stage1_timefilter(
         output_dir,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
-        schema=dataset.schema,
+        schema=schema,
     )
 
 
