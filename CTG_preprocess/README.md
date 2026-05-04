@@ -45,6 +45,16 @@ uv run python ctg_reduction.py --stage stage6
 uv run python registry_matching.py
 ```
 
+For very large Stage 2 inputs, you can split the column filter into restartable shards that write multiple parquet outputs in the same Stage 2 directory:
+
+```bash
+uv run python ctg_reduction.py --stage stage2 --stage2-shard-count 3 --stage2-shard-index 0
+uv run python ctg_reduction.py --stage stage2 --stage2-shard-count 3 --stage2-shard-index 1
+uv run python ctg_reduction.py --stage stage2 --stage2-shard-count 3 --stage2-shard-index 2
+```
+
+These commands use `DEFAULT_STAGE2_DIR` from `config.py`. Rerunning the same sharded command skips shard files that already exist.
+
 ## Outputs
 
 Main final outputs are written under `DEFAULT_STAGE7_DIR`:

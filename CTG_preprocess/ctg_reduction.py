@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gc
 from datetime import datetime
 from pathlib import Path
 
@@ -42,9 +43,14 @@ def _parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, "%Y-%m-%d")
 
 
-def _field_type_or_default(dataset: ds.Dataset, name: str, default_type: pa.DataType = pa.string()) -> pa.DataType:
-    if name in dataset.schema.names:
-        return dataset.schema.field(name).type
+def _field_type_or_default(
+    dataset_or_schema: ds.Dataset | pa.Schema,
+    name: str,
+    default_type: pa.DataType = pa.string(),
+) -> pa.DataType:
+    schema = dataset_or_schema.schema if isinstance(dataset_or_schema, ds.Dataset) else dataset_or_schema
+    if name in schema.names:
+        return schema.field(name).type
     return default_type
 
 
@@ -67,12 +73,81 @@ def _resolve_raw_parquet_files(input_dir: str | Path) -> list[str]:
 
 
 def _unify_parquet_schemas(input_paths: list[str]) -> pa.Schema:
-    schemas = [pq.ParquetFile(path).schema_arrow for path in input_paths]
+    schemas = []
+    for path in input_paths:
+        parquet_file = pq.ParquetFile(path)
+        try:
+            schemas.append(parquet_file.schema_arrow)
+        finally:
+            parquet_file.close()
     try:
         return pa.unify_schemas(schemas, promote_options="permissive")
     except TypeError:
         # Older PyArrow versions do not support permissive promotion.
         return pa.unify_schemas(schemas)
+
+
+def _resolve_parquet_input_paths(input_path: str | Path) -> list[Path]:
+    input_path = Path(input_path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input path not found: {input_path}")
+    if input_path.is_file():
+        if input_path.suffix != ".parquet":
+            raise FileNotFoundError(f"Input file is not a parquet file: {input_path}")
+        return [input_path]
+
+    parquet_files = sorted(path for path in input_path.glob("*.parquet") if path.is_file())
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in input directory: {input_path}")
+    return parquet_files
+
+
+def _stage2_output_path(output_dir: Path, shard_index: int, shard_count: int) -> Path:
+    if shard_count == 1:
+        return output_dir / "part-0000.parquet"
+    return output_dir / f"part-{shard_index:04d}-of-{shard_count:04d}.parquet"
+
+
+def _build_stage2_shards(input_paths: list[Path], shard_count: int) -> tuple[list[list[tuple[Path, int, int]]], int]:
+    file_row_groups: list[tuple[Path, int]] = []
+    total_row_groups = 0
+    for path in input_paths:
+        parquet_file = pq.ParquetFile(path)
+        try:
+            num_row_groups = parquet_file.metadata.num_row_groups
+        finally:
+            parquet_file.close()
+        if num_row_groups == 0:
+            continue
+        file_row_groups.append((path, num_row_groups))
+        total_row_groups += num_row_groups
+
+    if total_row_groups == 0:
+        raise RuntimeError("Stage2 input does not contain any row groups.")
+    if shard_count < 1:
+        raise ValueError("Stage2 shard count must be at least 1.")
+    if shard_count > total_row_groups:
+        raise ValueError(
+            f"Stage2 shard count ({shard_count}) exceeds available row groups ({total_row_groups})."
+        )
+
+    shard_plans: list[list[tuple[Path, int, int]]] = []
+    for shard_index in range(shard_count):
+        global_start = total_row_groups * shard_index // shard_count
+        global_stop = total_row_groups * (shard_index + 1) // shard_count
+        shard_slices: list[tuple[Path, int, int]] = []
+        offset = 0
+        for path, num_row_groups in file_row_groups:
+            file_start = offset
+            file_stop = offset + num_row_groups
+            local_start = max(global_start, file_start) - file_start
+            local_stop = min(global_stop, file_stop) - file_start
+            if local_start < local_stop:
+                shard_slices.append((path, local_start, local_stop))
+            offset = file_stop
+        shard_plans.append(shard_slices)
+
+    return shard_plans, total_row_groups
 
 
 def stage1_timefilter(
@@ -135,37 +210,30 @@ def _compute_toco(batch: pa.RecordBatch) -> pa.Array:
     if idx == -1:
         return pa.array([0.0] * batch.num_rows, type=pa.float32())
     toco_vals = batch.column(idx)
-
-    decoded = None
-    if hasattr(pc, "binary_base64_decode"):
-        decoded = pc.binary_base64_decode(toco_vals)
-    elif hasattr(pc, "binary_from_base64"):
-        decoded = pc.binary_from_base64(toco_vals)
-
-    if decoded is not None:
-        data = decoded.to_pylist()
-    else:
-        data = []
-        for v in toco_vals.to_pylist():
-            if v is None:
-                data.append(None)
-                continue
-            try:
-                data.append(base64.b64decode(v))
-            except Exception:
-                data.append(None)
-
-    out = []
-    for v in data:
-        if v is None:
-            out.append(0.0)
+    out = [0.0] * batch.num_rows
+    # Decode one cell at a time to avoid materializing an entire string+bytes batch in Python.
+    for row_idx, scalar in enumerate(toco_vals):
+        encoded = scalar.as_py()
+        if encoded is None:
             continue
-        vals = [b for b in v]
-        valid = [b for b in vals if 1 <= b <= 99]
-        if valid:
-            out.append(sum(valid) / len(valid))
-        else:
-            out.append(sum(vals) / len(vals) if vals else 0.0)
+        try:
+            decoded = base64.b64decode(encoded)
+        except Exception:
+            continue
+
+        total = 0
+        valid_total = 0
+        valid_count = 0
+        for value in decoded:
+            total += value
+            if 1 <= value <= 99:
+                valid_total += value
+                valid_count += 1
+
+        if valid_count:
+            out[row_idx] = valid_total / valid_count
+        elif decoded:
+            out[row_idx] = total / len(decoded)
     return pa.array(out, type=pa.float32())
 
 
@@ -174,8 +242,17 @@ def stage2_columnfilter(
     output_dir: str | Path,
     batch_size: int = 65536,
     report_every_batches: int = DEFAULT_PARTITION_REPORT_EVERY,
+    shard_count: int = 1,
+    shard_index: int | None = None,
 ) -> None:
-    dataset = ds.dataset(str(input_dir), format="parquet")
+    input_paths = _resolve_parquet_input_paths(input_dir)
+    dataset = ds.dataset([str(path) for path in input_paths], format="parquet")
+    input_schema = dataset.schema
+    requested_batch_size = batch_size
+    batch_size = min(batch_size, 8192)
+    write_row_group_size = max(batch_size * 16, 131072)
+    row_group_chunk_size = 1024
+    extra_columns = [name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in input_schema.names]
     columns = [
         "Timestamp",
         "PatientID",
@@ -185,56 +262,173 @@ def stage2_columnfilter(
         "Hr1_2",
         "Hr1_3",
         "Toco_Values",
-        *[name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in dataset.schema.names],
+        *extra_columns,
     ]
-    scanner = dataset.scanner(columns=columns, batch_size=batch_size)
+    registration_type = _field_type_or_default(input_schema, "RegistrationID")
+    extra_column_types = {name: _field_type_or_default(input_schema, name) for name in extra_columns}
 
     schema = pa.schema(
         [
-            ("Timestamp", dataset.schema.field("Timestamp").type),
-            ("PatientID", dataset.schema.field("PatientID").type),
-            ("RegistrationID", _field_type_or_default(dataset, "RegistrationID")),
+            ("Timestamp", input_schema.field("Timestamp").type),
+            ("PatientID", input_schema.field("PatientID").type),
+            ("RegistrationID", registration_type),
             ("FHR", pa.float32()),
             ("toco", pa.float32()),
-            *[(name, _field_type_or_default(dataset, name)) for name in DEFAULT_STAGE2_EXTRA_COLUMNS],
+            *[(name, extra_column_types[name]) for name in extra_columns],
         ]
     )
 
-    def batch_iter():
-        batches = 0
-        rows = 0
-        for batch in scanner.to_batches():
-            batches += 1
-            rows += batch.num_rows
-            if report_every_batches and batches % report_every_batches == 0:
-                print(f"Stage2: {batches} batches, {rows} rows")
+    if shard_index is not None and (shard_index < 0 or shard_index >= shard_count):
+        raise ValueError(f"Stage2 shard index must be within 0..{shard_count - 1}.")
 
-            timestamp = batch.column(batch.schema.get_field_index("Timestamp"))
-            patient_id = batch.column(batch.schema.get_field_index("PatientID"))
-            registration_id = _column_or_default(batch, "RegistrationID", _field_type_or_default(dataset, "RegistrationID"))
-
-            fhr = _compute_fhr(batch)
-            toco = _compute_toco(batch)
-            extras = [
-                _column_or_default(batch, name, _field_type_or_default(dataset, name))
-                for name in DEFAULT_STAGE2_EXTRA_COLUMNS
-            ]
-
-            yield pa.RecordBatch.from_arrays(
-                [timestamp, patient_id, registration_id, fhr, toco, *extras],
-                schema=schema,
-            )
+    shard_plans, total_row_groups = _build_stage2_shards(input_paths, shard_count)
+    selected_shards = [shard_index] if shard_index is not None else list(range(shard_count))
+    resume_mode = shard_count > 1 or shard_index is not None
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    ds.write_dataset(
-        batch_iter(),
-        output_dir,
-        format="parquet",
-        existing_data_behavior="overwrite_or_ignore",
-        schema=schema,
+    expected_outputs = {_stage2_output_path(output_dir, idx, shard_count).name for idx in range(shard_count)}
+    extra_outputs = [
+        path for path in output_dir.glob("*.parquet")
+        if path.name not in expected_outputs
+    ]
+    if extra_outputs:
+        sample = ", ".join(path.name for path in extra_outputs[:3])
+        raise RuntimeError(
+            f"Stage2 output directory contains existing parquet files ({sample}). "
+            f"Use a clean output directory or remove unexpected files first: {output_dir}"
+        )
+    if requested_batch_size != batch_size:
+        print(
+            f"Stage2: capping batch size from {requested_batch_size} to {batch_size} "
+            "to reduce peak RAM usage"
+        )
+    print(
+        f"Stage2: reading {len(input_paths)} parquet file(s) across {total_row_groups} row groups"
     )
+    print(
+        f"Stage2: buffering output into row groups of about {write_row_group_size} rows "
+        "to avoid excessive Parquet metadata growth"
+    )
+    if shard_count > 1:
+        shard_labels = ", ".join(str(idx) for idx in selected_shards)
+        print(
+            f"Stage2: sharding output into {shard_count} restartable shard(s); "
+            f"this run will process shard index {shard_labels}"
+        )
+
+    memory_pool = pa.default_memory_pool()
+
+    def transform_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
+        timestamp = batch.column(batch.schema.get_field_index("Timestamp"))
+        patient_id = batch.column(batch.schema.get_field_index("PatientID"))
+        registration_id = _column_or_default(batch, "RegistrationID", registration_type)
+        fhr = _compute_fhr(batch)
+        toco = _compute_toco(batch)
+        extras = [_column_or_default(batch, name, extra_column_types[name]) for name in extra_columns]
+        return pa.RecordBatch.from_arrays(
+            [timestamp, patient_id, registration_id, fhr, toco, *extras],
+            schema=schema,
+        )
+
+    def flush_buffer(
+        writer: pq.ParquetWriter,
+        buffered_batches: list[pa.RecordBatch],
+        buffered_rows: int,
+        force: bool = False,
+    ) -> tuple[list[pa.RecordBatch], int]:
+        if not buffered_batches:
+            return buffered_batches, buffered_rows
+
+        table = pa.Table.from_batches(buffered_batches, schema=schema)
+        rows_to_write = table.num_rows if force else (table.num_rows // write_row_group_size) * write_row_group_size
+        if rows_to_write:
+            writer.write_table(table.slice(0, rows_to_write), row_group_size=write_row_group_size)
+        remainder = table.slice(rows_to_write)
+        next_batches = remainder.to_batches(max_chunksize=batch_size)
+        next_rows = remainder.num_rows
+        del remainder
+        del table
+        gc.collect()
+        memory_pool.release_unused()
+        return next_batches, next_rows
+
+    for selected_shard in selected_shards:
+        shard_slices = shard_plans[selected_shard]
+        final_path = _stage2_output_path(output_dir, selected_shard, shard_count)
+        temp_path = output_dir / f".{final_path.name}.tmp"
+        shard_row_groups = sum(stop - start for _, start, stop in shard_slices)
+
+        if final_path.exists():
+            if resume_mode:
+                print(
+                    f"Stage2: skipping completed shard {selected_shard + 1}/{shard_count} "
+                    f"({final_path.name})"
+                )
+                continue
+            final_path.unlink()
+        if temp_path.exists():
+            temp_path.unlink()
+
+        print(
+            f"Stage2: shard {selected_shard + 1}/{shard_count} -> {final_path.name} "
+            f"({shard_row_groups} row groups)"
+        )
+
+        writer = pq.ParquetWriter(temp_path, schema=schema)
+        try:
+            buffered_batches: list[pa.RecordBatch] = []
+            buffered_rows = 0
+            batches = 0
+            rows = 0
+
+            for input_path, row_group_start, row_group_stop in shard_slices:
+                parquet_file = pq.ParquetFile(input_path)
+                try:
+                    for chunk_start in range(row_group_start, row_group_stop, row_group_chunk_size):
+                        row_groups = list(range(chunk_start, min(chunk_start + row_group_chunk_size, row_group_stop)))
+                        for batch in parquet_file.iter_batches(
+                            batch_size=batch_size,
+                            row_groups=row_groups,
+                            columns=columns,
+                            use_threads=False,
+                        ):
+                            batches += 1
+                            rows += batch.num_rows
+                            if report_every_batches and batches % report_every_batches == 0:
+                                print(
+                                    f"Stage2 shard {selected_shard + 1}/{shard_count}: "
+                                    f"{batches} batches, {rows} rows"
+                                )
+
+                            out_batch = transform_batch(batch)
+                            buffered_batches.append(out_batch)
+                            buffered_rows += out_batch.num_rows
+                            if buffered_rows >= write_row_group_size:
+                                buffered_batches, buffered_rows = flush_buffer(
+                                    writer,
+                                    buffered_batches,
+                                    buffered_rows,
+                                )
+                finally:
+                    parquet_file.close()
+
+            buffered_batches, buffered_rows = flush_buffer(
+                writer,
+                buffered_batches,
+                buffered_rows,
+                force=True,
+            )
+        except Exception:
+            writer.close()
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+        else:
+            writer.close()
+            temp_path.replace(final_path)
+            gc.collect()
+            memory_pool.release_unused()
 
 
 def stage3_sessionfilter(
@@ -732,6 +926,18 @@ def main() -> None:
         default=DEFAULT_PARTITION_REPORT_EVERY,
         help="Progress report frequency in batches (0 to disable).",
     )
+    parser.add_argument(
+        "--stage2-shard-count",
+        type=int,
+        default=1,
+        help="Stage2: split processing into restartable row-group shards.",
+    )
+    parser.add_argument(
+        "--stage2-shard-index",
+        type=int,
+        default=None,
+        help="Stage2: process only a single shard index (0..stage2-shard-count-1).",
+    )
 
     parser.add_argument(
         "--gap-minutes",
@@ -808,6 +1014,8 @@ def main() -> None:
             output_dir=args.output or DEFAULT_STAGE2_DIR,
             batch_size=args.batch_size,
             report_every_batches=args.report_every_batches,
+            shard_count=args.stage2_shard_count,
+            shard_index=args.stage2_shard_index,
         )
         return
 
