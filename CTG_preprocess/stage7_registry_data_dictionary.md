@@ -125,6 +125,14 @@ In the descriptions below:
 - ML-use: Used as output
 - Prevalance: 99.98%
 
+### `gestational_days`
+- Type: integer
+- Source: derived from `gravniva.csv`
+- Raw variables: `gl_v_barn`, `gl_d_barn`
+- Description: Gestational age at birth expressed as completed pregnancy days.
+- Derivation: Calculated as gestational weeks multiplied by 7 plus gestational days: `gl_v_barn * 7 + gl_d_barn`.
+- ML-use: Used as input
+
 ## Maternal background variables
 
 ### `fodelseland`
@@ -168,6 +176,14 @@ In the descriptions below:
 - Description: Maternal body mass index at registration. Ranges from 14.88 to 61.73.
 - ML-use: Used as input
 - Prevalance: 95.6%
+
+### `previous_c_section`
+- Type: boolean
+- Source: derived from `gravniva.csv`
+- Raw variable: `tidigare_sectio`
+- Description: Indicator of whether the mother has had a previous caesarean section before the current delivery.
+- Derivation: Set to `True` when `tidigare_sectio` is `Ja`; all other values, including `Nej` and missing/blank values, are set to `False`.
+- ML-use: Used as input
 
 ## Tobacco use
 
@@ -413,6 +429,14 @@ The following variables are derived from comma-separated code lists in `gravniva
 - Derivation: Set to `True` if any of `P703`, `P704A`, `P704B`, `P708`, or `P709` is present.
 - ML-use: Used as output
 - Prevalance: 2.23%
+
+### `neonatal_anemia`
+- Type: boolean
+- Source: `gravniva.csv`
+- Raw variable: `barnets_diagnoser_rad`
+- Description: Neonatal anaemia diagnosis indicator.
+- Derivation: Set to `True` if the child diagnosis code list contains any exact code `P612`, `P613`, or `P614`; otherwise set to `False`.
+- ML-use: Used as output
 
 ## SNQ-derived variables
 

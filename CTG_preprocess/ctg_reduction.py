@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import gc
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -100,6 +101,19 @@ def _resolve_parquet_input_paths(input_path: str | Path) -> list[Path]:
     if not parquet_files:
         raise FileNotFoundError(f"No parquet files found in input directory: {input_path}")
     return parquet_files
+
+
+def _sql_quote(value: str | Path) -> str:
+    return str(value).replace("'", "''")
+
+
+def _duckdb_read_parquet_sql(input_path: str | Path, recursive: bool = False) -> str:
+    input_path = Path(input_path)
+    if input_path.is_dir():
+        pattern = input_path / ("**/*.parquet" if recursive else "*.parquet")
+    else:
+        pattern = input_path
+    return f"read_parquet('{_sql_quote(pattern)}')"
 
 
 def _stage2_output_path(output_dir: Path, shard_index: int, shard_count: int) -> Path:
@@ -441,6 +455,7 @@ def stage3_sessionfilter(
     show_progress: bool = True,
     bucket_count: int = DEFAULT_STAGE3_BUCKETS,
     bucket_index: int | None = None,
+    prebucket: bool = True,
 ) -> None:
     try:
         import duckdb
@@ -449,8 +464,6 @@ def stage3_sessionfilter(
 
     output_file = Path(output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    if output_file.exists():
-        output_file.unlink()
 
     con = duckdb.connect()
     if show_progress:
@@ -463,8 +476,7 @@ def stage3_sessionfilter(
         con.execute("SET preserve_insertion_order=false")
     except Exception:
         pass
-    safe_path = str(input_dir).replace("'", "''")
-    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+    source_sql = _duckdb_read_parquet_sql(input_dir)
 
     def _pick_hash_func() -> str:
         for func in ("sha256", "md5"):
@@ -481,6 +493,15 @@ def stage3_sessionfilter(
         f"{hash_func}(concat('{salt}', '|', CAST(PatientID AS VARCHAR),"
         f" '|', CAST(session_end AS VARCHAR)))"
     )
+
+    def _bucket_expr() -> str:
+        return (
+            "CAST(("
+            "COALESCE("
+            "try_cast(right(CAST(PatientID AS VARCHAR), 4) AS UBIGINT), "
+            "hash(CAST(PatientID AS VARCHAR))"
+            f") % {bucket_count}) AS INTEGER)"
+        )
 
     def _build_query(extra_where: str) -> str:
         where_clause = ("\n    WHERE " + extra_where) if extra_where else ""
@@ -579,27 +600,70 @@ SELECT
 FROM final_rows
 """
 
-    def _bucket_expr() -> str:
-        return f"(CAST(right(PatientID, 4) AS INTEGER) % {bucket_count})"
-
     output_path = Path(output_file)
-    if bucket_count and bucket_count > 1:
-        base_dir = output_path if output_path.suffix == "" else output_path.parent
-        base_dir.mkdir(parents=True, exist_ok=True)
-        prefix = output_path.stem if output_path.suffix else "stage3_sessions"
-        indices = [bucket_index] if bucket_index is not None else range(bucket_count)
-        for idx in indices:
-            out_path = base_dir / f"{prefix}_bucket_{idx:04d}.parquet"
-            print(f"Stage3 bucket {idx+1}/{bucket_count}: {out_path.name}")
-            if out_path.exists():
-                out_path.unlink()
-            query = _build_query(f"{_bucket_expr()} = {idx}")
-            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_path)])
-    else:
-        query = _build_query("")
-        if output_path.exists():
-            output_path.unlink()
-        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_path)])
+    prebucket_dir: Path | None = None
+    try:
+        if bucket_count and bucket_count > 1:
+            base_dir = output_path if output_path.suffix == "" else output_path.parent
+            base_dir.mkdir(parents=True, exist_ok=True)
+            prefix = output_path.stem if output_path.suffix else "stage3_sessions"
+
+            if bucket_index is None:
+                for stale in base_dir.glob(f"{prefix}_bucket_*.parquet"):
+                    stale.unlink()
+
+            if bucket_index is None and prebucket:
+                prebucket_dir = base_dir / f".{prefix}_stage3_input_buckets_{bucket_count}"
+                if prebucket_dir.exists():
+                    shutil.rmtree(prebucket_dir)
+                prebucket_dir.mkdir(parents=True, exist_ok=True)
+                print(
+                    "Stage3: pre-bucketing input by PatientID in one pass "
+                    f"to avoid {bucket_count} full parquet scans"
+                )
+                con.execute(
+                    f"""
+                    COPY (
+                        SELECT *, {_bucket_expr()} AS patient_bucket
+                        FROM {source_sql}
+                    )
+                    TO '{_sql_quote(prebucket_dir)}'
+                    (FORMAT PARQUET, PARTITION_BY (patient_bucket))
+                    """
+                )
+
+            indices = [bucket_index] if bucket_index is not None else range(bucket_count)
+            for idx in indices:
+                out_path = base_dir / f"{prefix}_bucket_{idx:04d}.parquet"
+                print(f"Stage3 bucket {idx+1}/{bucket_count}: {out_path.name}")
+                if bucket_index is None and prebucket_dir is not None:
+                    bucket_path = prebucket_dir / f"patient_bucket={idx}"
+                    if not bucket_path.exists():
+                        print(f"Stage3 bucket {idx+1}/{bucket_count}: no input rows, skipping")
+                        continue
+                    con.execute(
+                        "CREATE OR REPLACE VIEW ctg AS SELECT * FROM "
+                        f"{_duckdb_read_parquet_sql(bucket_path)}"
+                    )
+                    query = _build_query("")
+                else:
+                    con.execute(f"CREATE OR REPLACE VIEW ctg AS SELECT * FROM {source_sql}")
+                    query = _build_query(f"{_bucket_expr()} = {idx}")
+
+                if out_path.exists():
+                    out_path.unlink()
+                con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_path)])
+        else:
+            if output_path.exists():
+                output_path.unlink()
+            con.execute(f"CREATE OR REPLACE VIEW ctg AS SELECT * FROM {source_sql}")
+            query = _build_query("")
+            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_path)])
+    finally:
+        con.close()
+        if prebucket_dir is not None and prebucket_dir.exists():
+            shutil.rmtree(prebucket_dir)
+
 
 def stage4_duplicatefilter(
     input_dir: str | Path,
@@ -613,7 +677,7 @@ def stage4_duplicatefilter(
         raise RuntimeError("DuckDB is required for stage4. Install it with pip/uv.") from exc
 
     input_path = Path(input_dir)
-    input_files = sorted(input_path.rglob("*.parquet")) if input_path.is_dir() else [input_path]
+    input_files = sorted(input_path.glob("*.parquet")) if input_path.is_dir() else [input_path]
     input_files = [p for p in input_files if p.exists()]
     if not input_files:
         raise FileNotFoundError(f"No parquet files found for stage4 input: {input_dir}")
@@ -648,20 +712,53 @@ def stage4_duplicatefilter(
         FROM ctg c
         JOIN keep_baby k USING (BabyID)
     ),
+    ranked AS (
+        SELECT
+            *,
+            CASE upper(trim(CAST(Hr1_SignalQuality AS VARCHAR)))
+                WHEN 'G' THEN 1
+                WHEN 'Y' THEN 2
+                WHEN 'R' THEN 3
+                ELSE 4
+            END AS signal_quality_rank
+        FROM filtered
+    ),
+    best_quality AS (
+        SELECT BabyID, Timestamp, MIN(signal_quality_rank) AS signal_quality_rank
+        FROM ranked
+        GROUP BY BabyID, Timestamp
+    ),
+    selected AS (
+        SELECT r.*
+        FROM ranked r
+        JOIN best_quality b
+          ON r.BabyID = b.BabyID
+         AND r.Timestamp = b.Timestamp
+         AND r.signal_quality_rank = b.signal_quality_rank
+    ),
     agg AS (
         SELECT
             BabyID,
             MIN(PatientID) AS PatientID,
             Timestamp,
-            COALESCE(median(FHR) FILTER (WHERE FHR > 0), 0) AS FHR,
-            COALESCE(
-                median(toco) FILTER (WHERE toco BETWEEN 1 AND 99),
-                median(toco)
-            ) AS toco,
-            COALESCE(mode(Hr1_SignalQuality), MIN(Hr1_SignalQuality)) AS Hr1_SignalQuality,
+            CAST(COALESCE(
+                avg(FHR) FILTER (WHERE FHR > 0 AND FHR < 255),
+                avg(FHR) FILTER (WHERE FHR > 0),
+                0
+            ) AS FLOAT) AS FHR,
+            CAST(COALESCE(
+                avg(toco) FILTER (WHERE toco BETWEEN 1 AND 99),
+                avg(toco)
+            ) AS FLOAT) AS toco,
+            CASE MIN(signal_quality_rank)
+                WHEN 1 THEN 'G'
+                WHEN 2 THEN 'Y'
+                WHEN 3 THEN 'R'
+                ELSE COALESCE(mode(Hr1_SignalQuality), MIN(Hr1_SignalQuality))
+            END AS Hr1_SignalQuality,
             COALESCE(mode(Hr1Mode), MIN(Hr1Mode)) AS Hr1Mode,
             COALESCE(mode(TocoMode), MIN(TocoMode)) AS TocoMode
-        FROM filtered
+        FROM selected
         GROUP BY BabyID, Timestamp
     )
     SELECT * FROM agg
@@ -682,10 +779,11 @@ def stage4_duplicatefilter(
         except Exception:
             pass
 
-        safe_path = str(in_file).replace("'", "''")
-        con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
-        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_file)])
-        con.close()
+        try:
+            con.execute(f"CREATE VIEW ctg AS SELECT * FROM {_duckdb_read_parquet_sql(in_file)}")
+            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_file)])
+        finally:
+            con.close()
         print(f"Stage4: {idx}/{total} buckets -> {out_file.name}")
 
 
@@ -717,8 +815,7 @@ def stage5_qualityfilter(
     except Exception:
         pass
 
-    safe_path = str(input_dir).replace("'", "''")
-    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM {_duckdb_read_parquet_sql(input_dir)}")
 
     query = f"""
     WITH per_baby AS (
@@ -738,7 +835,10 @@ def stage5_qualityfilter(
     JOIN keep k USING (BabyID)
     """
 
-    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+    try:
+        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+    finally:
+        con.close()
 
 
 def stage6_partitioning(
@@ -771,11 +871,15 @@ def stage6_partitioning(
             raise RuntimeError("DuckDB is required for stage6 when ctg_date is missing.") from exc
 
         con = duckdb.connect()
-        safe_path = str(input_path).replace("'", "''")
-        con.execute(f"CREATE VIEW ctg AS SELECT BabyID, Timestamp FROM read_parquet('{safe_path}')")
-        anchor_rows = con.execute(
-            "SELECT BabyID, CAST(MAX(Timestamp) AS DATE) AS anchor_date FROM ctg GROUP BY BabyID"
-        ).fetchall()
+        con.execute(
+            f"CREATE VIEW ctg AS SELECT BabyID, Timestamp FROM {_duckdb_read_parquet_sql(input_path)}"
+        )
+        try:
+            anchor_rows = con.execute(
+                "SELECT BabyID, CAST(MAX(Timestamp) AS DATE) AS anchor_date FROM ctg GROUP BY BabyID"
+            ).fetchall()
+        finally:
+            con.close()
         if not anchor_rows:
             print("Stage6: no rows found in input.")
             return
@@ -842,6 +946,7 @@ def stage6_partitioning(
         schema=schema,
     )
 
+
 def stage5_5_sort(
     input_file: str | Path,
     output_file: str | Path,
@@ -869,8 +974,7 @@ def stage5_5_sort(
     except Exception:
         pass
 
-    safe_path = str(input_file).replace("'", "''")
-    con.execute(f"CREATE VIEW ctg AS SELECT * FROM read_parquet('{safe_path}')")
+    con.execute(f"CREATE VIEW ctg AS SELECT * FROM {_duckdb_read_parquet_sql(input_file)}")
 
     query = """
     WITH anchors AS (
@@ -884,7 +988,10 @@ def stage5_5_sort(
     ORDER BY a.ctg_date, c.BabyID, c.Timestamp
     """
 
-    con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+    try:
+        con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_file)])
+    finally:
+        con.close()
 
 
 
@@ -996,6 +1103,14 @@ def main() -> None:
         default=None,
         help="Stage3: process a single bucket index (0..bucket-count-1).",
     )
+    parser.add_argument(
+        "--no-stage3-prebucket",
+        action="store_true",
+        help=(
+            "Stage3: disable the one-pass temporary PatientID pre-bucket step. "
+            "This uses less temporary disk space but rescans the input once per bucket."
+        ),
+    )
     args = parser.parse_args()
 
     if args.stage == "stage1":
@@ -1030,6 +1145,7 @@ def main() -> None:
             show_progress=not args.no_progress,
             bucket_count=args.bucket_count,
             bucket_index=args.bucket_index,
+            prebucket=not args.no_stage3_prebucket,
         )
         return
 

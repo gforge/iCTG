@@ -45,6 +45,12 @@ uv run python ctg_reduction.py --stage stage6
 uv run python registry_matching.py
 ```
 
+Stage 3 defaults to a one-pass temporary PatientID pre-bucketing step before it runs the session logic. This avoids rescanning the full Stage 2 output once per bucket, but it temporarily needs disk space on the order of the Stage 2 output size. To use the older direct bucket scans instead:
+
+```bash
+uv run python ctg_reduction.py --stage stage3 --no-stage3-prebucket
+```
+
 For very large Stage 2 inputs, you can split the column filter into restartable shards that write multiple parquet outputs in the same Stage 2 directory:
 
 ```bash
