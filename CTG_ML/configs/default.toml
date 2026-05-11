@@ -1,6 +1,6 @@
 [paths]
-ctg_parquet = "/home/lukas-uggla/Documents/Data/ML-training/CTG1/ctg_simple.parquet"
-registry_csv = "/home/lukas-uggla/Documents/Data/ML-training/CTG1/registry_simple.csv"
+ctg_parquet = "data/CTG1/ctg_simple.parquet"
+registry_csv = "data/CTG1/registry_simple.csv"
 artifacts_dir = "artifacts"
 
 [target]

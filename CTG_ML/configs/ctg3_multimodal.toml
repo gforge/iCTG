@@ -1,7 +1,7 @@
 [paths]
-ctg_parquet = "data/CTG2/ctg_final.parquet"
-registry_csv = "data/CTG2/registry_final.csv"
-artifacts_dir = "artifacts_ctg2"
+ctg_parquet = "data/CTG3/ctg_final.parquet"
+registry_csv = "data/CTG3/registry.csv"
+artifacts_dir = "artifacts_ctg3"
 
 [split]
 train_fraction = 0.70
@@ -19,14 +19,14 @@ include_padding_mask = true
 include_signal_quality_channels = true
 # Green is the implicit baseline when both of these are 0.
 quality_levels = ["Y", "R"]
-output_dir = "artifacts_ctg2/tcn_multimodal_60m"
+output_dir = "artifacts_ctg3/tcn_multimodal_60m"
 chunk_vectors_per_batch = 64
 
 [registry]
-# Inputs kept post-CTG-encoder and concatenated with the pooled sequence embedding.
-# The fields below are excluded by default because they would leak post-birth information.
+# Inputs represent information considered available around the last hour before birth.
 input_numeric = [
   "maternal_age",
+  "gestational_days",
   "etablerade_varkar_seconds",
   "para_mhv1",
   "langd_inskrivning_cm",
@@ -36,6 +36,7 @@ input_numeric = [
 input_boolean = [
   "is_smoker",
   "diabetes_mellitus",
+  "previous_c_section",
   "is_girl",
   "gestational_hypertension_without_significant_proteinuria",
   "preeclampsia",
@@ -64,12 +65,14 @@ binary_outputs = [
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
   "neonatal_sepsis_or_pneumonia",
+  "neonatal_anemia",
   "respiratorbehandling",
 ]
 binary_outputs_missing_as_false = [
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
   "neonatal_sepsis_or_pneumonia",
+  "neonatal_anemia",
   "respiratorbehandling",
 ]
 
@@ -99,6 +102,7 @@ monitor_binary_tasks = [
   "apgar5_below7",
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
+  "neonatal_anemia",
   "respiratorbehandling",
 ]
 early_stopping_enabled = true

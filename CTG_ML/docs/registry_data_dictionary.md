@@ -49,6 +49,14 @@ In the descriptions below:
 - ML-use: Used as input
 - Prevalance: 100%
 
+### `gestational_days`
+- Type: integer
+- Source: derived from `gravniva.csv`
+- Raw variables: `gl_v_barn`, `gl_d_barn`
+- Description: Gestational age at birth in total completed days.
+- Derivation: Calculated as `gl_v_barn * 7 + gl_d_barn`, where `gl_v_barn` is the gestational week and `gl_d_barn` is the additional gestational day within that week. If either raw component is missing or cannot be parsed as an integer, the derived value is missing.
+- ML-use: Used as input in CTG3
+
 ## Labour timing
 
 ### `etablerade_varkar_datum`
@@ -216,6 +224,14 @@ In the descriptions below:
 - Derivation: `Ja` is mapped to `True`, `Nej` to `False`, other values remain missing.
 - ML-use: Used as input, but risky due to very few True samples.
 - Prevalance: 97.6% non-missing. False 96.96%, True 0.65%.
+
+### `previous_c_section`
+- Type: boolean
+- Source: derived from `gravniva.csv`
+- Raw variable: `tidigare_sectio`
+- Description: Indicator that the mother has had a previous caesarean section.
+- Derivation: Set to `True` when `tidigare_sectio` is `Ja`. All other values, including `Nej`, blank values, and missing values, are encoded as `False`.
+- ML-use: Used as input in CTG3
 
 ### `alkohol_audit_poang`
 - Type: integer
@@ -413,6 +429,14 @@ The following variables are derived from comma-separated code lists in `gravniva
 - Derivation: Set to `True` if any of `P703`, `P704A`, `P704B`, `P708`, or `P709` is present.
 - ML-use: Used as output
 - Prevalance: 2.23%
+
+### `neonatal_anemia`
+- Type: boolean
+- Source: derived from `gravniva.csv`
+- Raw variable: `barnets_diagnoser_rad`
+- Description: Neonatal anaemia indicator.
+- Derivation: Set to `True` if the child diagnosis code list contains any exact code `P612`, `P613`, or `P614`; otherwise set to `False`. Codes are normalized to uppercase and whitespace is removed before matching.
+- ML-use: Used as output in CTG3
 
 ## SNQ-derived variables
 

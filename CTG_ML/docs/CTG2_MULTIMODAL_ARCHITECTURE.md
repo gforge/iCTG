@@ -1,5 +1,7 @@
 # CTG2 Multimodal Architecture
 
+Legacy note: this document describes the CTG2 experiment that produced the existing `artifacts_ctg2` results. New work should start from `configs/ctg3_multimodal.toml` and the generic scripts `scripts/make_splits_multimodal.py`, `scripts/preprocess_multimodal.py`, and `scripts/train_multimodal_tcn.py`.
+
 This file describes the current CTG2 model from `configs/ctg2_multimodal.toml`, `src/ctg_ml/models.py`, and the CTG2 preprocessing/training scripts.
 
 ## Current Config Snapshot

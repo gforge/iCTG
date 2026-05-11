@@ -4,13 +4,25 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.agents/
+.codex
 
 # Local outputs
 artifacts/
 artifacts_ctg2/
+artifacts_ctg3/
 runs/
 checkpoints/
 logs/
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.parquet
+
+# Local/private data
+data/
+*.csv
 
 # Notebook clutter
 .ipynb_checkpoints/
@@ -22,6 +34,7 @@ logs/
 
 # Local notes
 docs/TCN_NOTES.md
+docs/ML Project Reference Document.md
 
 # Testing scripts
 generate_synthetic_tcn_data.py

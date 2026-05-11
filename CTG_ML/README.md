@@ -33,45 +33,38 @@ source .venv/bin/activate
 uv sync
 ```
 
-## Configuration
+## Current CTG3 Workflow
 
-Edit `configs/default.toml` if needed. The default paths are wired to your current dataset location.
-
-## Run
-
-Create splits:
-
-```bash
-uv run python scripts/make_splits.py
-```
-
-Train a baseline (aggregated features, class-weighted logistic regression):
-
-```bash
-uv run python scripts/train_baseline.py
-```
-
-TCN skeleton (requires sequence tensors you preprocess first):
-
-```bash
-uv run python scripts/preprocess_tcn.py
-uv run python scripts/train_tcn.py
-```
-
-## CTG2 Multimodal Version
-
-The new CTG2 pipeline keeps the TCN sequence encoder but adds registry/tabular inputs after the pooled CTG embedding and predicts multiple outputs at once.
+CTG3 is the current active multimodal version. It keeps the TCN sequence encoder, adds registry/tabular inputs after the pooled CTG embedding, and predicts multiple outputs at once.
 
 Default config:
 
-- `configs/ctg2_multimodal.toml`
+- `configs/ctg3_multimodal.toml`
+
+The public config uses local placeholder paths under `data/`. Place the CTG and registry
+files there, create symlinks, or edit the `[paths]` section before running:
+
+- `data/CTG3/ctg_final.parquet`
+- `data/CTG3/registry.csv`
 
 Workflow:
 
 ```bash
-uv run python scripts/make_splits_ctg2.py --config configs/ctg2_multimodal.toml
-uv run python scripts/preprocess_ctg2_multimodal.py --config configs/ctg2_multimodal.toml
-uv run python scripts/train_ctg2_multimodal.py --config configs/ctg2_multimodal.toml
+uv run python scripts/make_splits_multimodal.py --config configs/ctg3_multimodal.toml
+uv run python scripts/preprocess_multimodal.py --config configs/ctg3_multimodal.toml
+uv run python scripts/train_multimodal_tcn.py --config configs/ctg3_multimodal.toml
+```
+
+Registry-only XGBoost baseline and feature-importance run:
+
+```bash
+uv run python scripts/train_xgboost_registry.py --config configs/ctg3_multimodal.toml
+```
+
+XGBoost on frozen TCN embeddings plus registry features:
+
+```bash
+uv run python scripts/train_xgboost_tcn_embeddings.py --config configs/ctg3_multimodal.toml
 ```
 
 Design notes:
@@ -79,11 +72,21 @@ Design notes:
 - CTG inputs: `FHR`, `toco`, one-hot `Hr1_SignalQuality` channels, and `padding_mask`
 - Registry inputs: numeric/boolean/categorical columns encoded into a dense tabular vector
 - Outputs: Apgar class heads (`0-10`), continuous pH heads, and binary heads for selected neonatal outcomes
-- Some registry fields that would leak post-birth information are excluded by default in `configs/ctg2_multimodal.toml`
+- CTG3 adds `gestational_days`, `previous_c_section`, and `neonatal_anemia`
+- The intended prediction moment is the last hour before birth, so late-labour variables in the config are intentional inputs
+
+## Legacy Workflows
+
+These are kept so earlier results can still be inspected or reproduced, but new work should start from the CTG3 workflow above.
+
+- CTG1/simple binary workflow: `configs/default.toml`, `scripts/make_splits.py`, `scripts/preprocess_tcn.py`, `scripts/train_tcn.py`
+- CTG2 multimodal workflow: `configs/ctg2_multimodal.toml`, `scripts/make_splits_ctg2.py`, `scripts/preprocess_ctg2_multimodal.py`, `scripts/train_ctg2_multimodal.py`
+- CTG2 ablation tooling: `scripts/run_ctg2_ablation_study.py`
+- Canonical shared implementation for new work: `src/ctg_ml/multimodal_config.py`, `src/ctg_ml/multimodal_registry.py`, `src/ctg_ml/multimodal_preprocess.py`
+- Version map: `docs/PROJECT_VERSIONS.md`
 
 ## Notes
 
 - Splits are created on `BabyID`, so no pregnancy leaks across train/val/test.
 - The baseline is a sanity check and usually catches data issues early (join problems, leakage, label bugs).
-- TCN preprocessing defaults to the last 20 minutes at 1 Hz (1200 steps) and adds an `fhr_missing_mask` channel.
-- You can later switch to 60 minutes by editing `configs/default.toml` (`[sequence].window_minutes = 60`) and rerunning preprocessing.
+- CTG3 preprocessing defaults to the last 60 minutes at 1 Hz (3600 steps).
