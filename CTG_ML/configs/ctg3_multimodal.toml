@@ -86,7 +86,7 @@ fusion_hidden_dim = 128
 [train]
 learning_rate = 0.0005
 batch_size = 128
-epochs = 20
+epochs = 100
 weight_decay = 0.0001
 # Tempered inverse-frequency class weighting for Apgar 0..10 classification.
 # 0.0 disables weighting; 0.5 is a conservative first pass.
@@ -106,6 +106,6 @@ monitor_binary_tasks = [
   "respiratorbehandling",
 ]
 early_stopping_enabled = true
-early_stopping_min_epochs = 8
-early_stopping_patience = 8
+early_stopping_min_epochs = 10
+early_stopping_patience = 10
 early_stopping_min_delta = 0.0005
