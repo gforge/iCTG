@@ -20,6 +20,14 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _count(con: duckdb.DuckDBPyConnection, sql: str) -> int:
+    """Run a single-value aggregate query (e.g. ``COUNT(*)``) and return it as an int."""
+    row = con.execute(sql).fetchone()
+    if row is None:
+        raise RuntimeError(f"Query returned no rows: {sql.strip()[:200]}")
+    return int(row[0] or 0)
+
+
 def _clean_text_expr(col: str) -> str:
     return f"NULLIF(trim(CAST({col} AS VARCHAR)), '')"
 
@@ -571,7 +579,8 @@ def registry_match(
         """
     )
 
-    multi_rows = con.execute(
+    multi_rows = _count(
+        con,
         """
         SELECT COUNT(*) FROM (
             SELECT reg_row, COUNT(*) AS cnt
@@ -579,8 +588,8 @@ def registry_match(
             GROUP BY reg_row
             HAVING COUNT(*) > 1
         )
-        """
-    ).fetchone()[0]
+        """,
+    )
 
     con.execute(
         """
@@ -597,9 +606,9 @@ def registry_match(
         """
     )
 
-    total_rows = con.execute("SELECT COUNT(*) FROM reg_raw").fetchone()[0]
-    clean_rows = con.execute("SELECT COUNT(*) FROM reg_clean").fetchone()[0]
-    match_rows = con.execute("SELECT COUNT(*) FROM unique_matches").fetchone()[0]
+    total_rows = _count(con, "SELECT COUNT(*) FROM reg_raw")
+    clean_rows = _count(con, "SELECT COUNT(*) FROM reg_clean")
+    match_rows = _count(con, "SELECT COUNT(*) FROM unique_matches")
 
     print(f"Registry rows total: {total_rows}")
     print(f"Registry rows with valid apgar/birth_day: {clean_rows}")

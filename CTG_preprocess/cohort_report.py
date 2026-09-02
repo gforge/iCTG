@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import time
-from collections.abc import Iterable
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pyarrow.parquet as pq
@@ -40,32 +41,38 @@ def _fmt_seconds(seconds: float) -> str:
     return f"{secs}s"
 
 
-def _source_sql(path: str | Iterable[str]) -> tuple[str | None, int, int]:
-    if isinstance(path, (list, tuple)):
-        files = [str(p) for p in path if Path(p).exists()]
-        if not files:
+StagePath = str | Path | Sequence[str | Path]
+"""A stage location: one file, one directory, or an explicit list of parquet files."""
+
+
+def _source_sql(path: StagePath) -> tuple[str | None, int, int]:
+    """Return ``(read_parquet(...) SQL, file_count, total_bytes)`` for a stage location."""
+    if not isinstance(path, (str, Path)):
+        explicit_files = [Path(p) for p in path if Path(p).exists()]
+        if not explicit_files:
             return None, 0, 0
-        source = "read_parquet([" + ",".join(f"'{_safe(p)}'" for p in files) + "])"
-        size = sum(Path(p).stat().st_size for p in files)
-        return source, len(files), size
+        source = "read_parquet([" + ",".join(f"'{_safe(str(p))}'" for p in explicit_files) + "])"
+        size = sum(p.stat().st_size for p in explicit_files)
+        return source, len(explicit_files), size
 
     p = Path(path)
     if p.is_dir():
-        files = list(p.rglob("*.parquet"))
-        if not files:
+        dir_files = list(p.rglob("*.parquet"))
+        if not dir_files:
             return None, 0, 0
         return (
             f"read_parquet('{_safe(str(p / '**' / '*.parquet'))}')",
-            len(files),
-            sum(f.stat().st_size for f in files),
+            len(dir_files),
+            sum(f.stat().st_size for f in dir_files),
         )
     if p.exists():
         return f"read_parquet('{_safe(str(p))}')", 1, p.stat().st_size
     return None, 0, 0
 
 
-def _metadata_row_count(path: str | Iterable[str]) -> int | None:
-    if isinstance(path, (list, tuple)):
+def _metadata_row_count(path: StagePath) -> int | None:
+    files: list[Path]
+    if not isinstance(path, (str, Path)):
         files = [Path(p) for p in path if Path(p).exists()]
     else:
         p = Path(path)
@@ -87,6 +94,14 @@ def _metadata_row_count(path: str | Iterable[str]) -> int | None:
     return total
 
 
+def _fetchone(con: duckdb.DuckDBPyConnection, sql: str) -> tuple[Any, ...]:
+    """Run ``sql`` and return its single result row (aggregate queries always yield one)."""
+    row = con.execute(sql).fetchone()
+    if row is None:
+        raise RuntimeError(f"Query returned no rows: {sql.strip()[:200]}")
+    return row
+
+
 def _columns(con: duckdb.DuckDBPyConnection, source_sql: str) -> list[str]:
     return [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {source_sql}").fetchall()]
 
@@ -99,7 +114,7 @@ def _basic_counts(
         select_parts.append("COUNT(DISTINCT BabyID) AS babies")
     if "PatientID" in cols:
         select_parts.append("COUNT(DISTINCT PatientID) AS patients")
-    row = con.execute(f"SELECT {', '.join(select_parts)} FROM {source_sql}").fetchone()
+    row = _fetchone(con, f"SELECT {', '.join(select_parts)} FROM {source_sql}")
     rows = int(row[0] or 0)
     idx = 1
     babies = int(row[idx] or 0) if "BabyID" in cols else None
@@ -115,7 +130,8 @@ def _pregnancy_count_pre_stage3(
     gap_minutes: int,
     preg_gap_days: int,
 ) -> int:
-    row = con.execute(
+    row = _fetchone(
+        con,
         f"""
         WITH ordered AS (
             SELECT
@@ -155,8 +171,8 @@ def _pregnancy_count_pre_stage3(
         )
         SELECT COUNT(*)
         FROM (SELECT DISTINCT PatientID, pregnancy_id FROM preg_sessions)
-        """
-    ).fetchone()
+        """,
+    )
     return int(row[0] or 0)
 
 
@@ -175,10 +191,9 @@ def _pre_stage3_date_cluster_stats(
         GROUP BY PatientID, CAST(Timestamp AS DATE)
         """
     )
-    patients = con.execute(f"SELECT COUNT(DISTINCT PatientID) FROM {table_name}_dates").fetchone()[
-        0
-    ]
-    overlap = con.execute(
+    patients = _fetchone(con, f"SELECT COUNT(DISTINCT PatientID) FROM {table_name}_dates")[0]
+    overlap = _fetchone(
+        con,
         f"""
         SELECT COUNT(*)
         FROM (
@@ -186,9 +201,10 @@ def _pre_stage3_date_cluster_stats(
             FROM {table_name}_dates d
             JOIN registry_ids r USING (PatientID)
         )
-        """
-    ).fetchone()[0]
-    pregnancies = con.execute(
+        """,
+    )[0]
+    pregnancies = _fetchone(
+        con,
         f"""
         WITH dated AS (
             SELECT
@@ -210,13 +226,14 @@ def _pre_stage3_date_cluster_stats(
         )
         SELECT SUM(is_start)
         FROM pregnancy_starts
-        """
-    ).fetchone()[0]
+        """,
+    )[0]
     return int(patients or 0), int(pregnancies or 0), int(overlap or 0)
 
 
 def _registry_overlap(con: duckdb.DuckDBPyConnection, source_sql: str) -> int:
-    row = con.execute(
+    row = _fetchone(
+        con,
         f"""
         SELECT COUNT(*)
         FROM (
@@ -224,8 +241,8 @@ def _registry_overlap(con: duckdb.DuckDBPyConnection, source_sql: str) -> int:
             FROM {source_sql} s
             JOIN registry_ids r USING (PatientID)
         )
-        """
-    ).fetchone()
+        """,
+    )
     return int(row[0] or 0)
 
 
@@ -276,7 +293,7 @@ def main() -> None:
         WHERE reg_digits IS NOT NULL AND length(reg_digits) >= 12
         """
     )
-    reg_patients = con.execute("SELECT COUNT(*) FROM registry_ids").fetchone()[0]
+    reg_patients = _fetchone(con, "SELECT COUNT(*) FROM registry_ids")[0]
     print(f"registry_person_ids: {reg_patients}")
 
     stages = [

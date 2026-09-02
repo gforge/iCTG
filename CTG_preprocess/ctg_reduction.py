@@ -57,7 +57,9 @@ def _column_or_default(batch: pa.RecordBatch, name: str, value_type: pa.DataType
     idx = batch.schema.get_field_index(name)
     if idx != -1:
         return batch.column(idx)
-    return pa.nulls(batch.num_rows, type=value_type)
+    # ``value_type`` is only known as a generic ``pa.DataType`` at this point, so build the
+    # all-null column via a null -> target cast (supported by Arrow for every data type).
+    return pa.nulls(batch.num_rows).cast(value_type)
 
 
 def _resolve_raw_parquet_files(input_dir: str | Path) -> list[str]:
@@ -202,21 +204,32 @@ def stage1_timefilter(
     )
 
 
+FHR_SOURCE_COLUMNS = ("Hr1_0", "Hr1_1", "Hr1_2", "Hr1_3")
+
+
 def _compute_fhr(batch: pa.RecordBatch) -> pa.Array:
-    h_cols = ["Hr1_0", "Hr1_1", "Hr1_2", "Hr1_3"]
-    sums = None
-    counts = None
-    for name in h_cols:
-        col = pc.fill_null(batch.column(batch.schema.get_field_index(name)), 0)
-        mask = pc.greater(col, 0)
-        val = pc.if_else(mask, col, 0)
-        count = pc.cast(mask, pa.int32())
-        sums = val if sums is None else pc.add(sums, val)
-        counts = count if counts is None else pc.add(counts, count)
-    has_vals = pc.greater(counts, 0)
-    safe_counts = pc.if_else(has_vals, counts, 1)
-    fhr = pc.if_else(has_vals, pc.divide(sums, safe_counts), 0)
-    return pc.cast(fhr, pa.float32())
+    """Per-row mean of the strictly positive ``Hr1_*`` values (0.0 when none are positive)."""
+    zero = pa.scalar(0)
+    values: list[pa.Array] = []
+    counts: list[pa.Array] = []
+    for name in FHR_SOURCE_COLUMNS:
+        raw = batch.column(batch.schema.get_field_index(name))
+        col: pa.Array = pc.fill_null(raw, pa.scalar(0, type=raw.type))
+        mask: pa.Array = pc.greater(col, zero)
+        values.append(pc.if_else(mask, col, zero))
+        counts.append(pc.cast(mask, pa.int32()))
+    sums: pa.Array = values[0]
+    total_counts: pa.Array = counts[0]
+    for val, count in zip(values[1:], counts[1:], strict=True):
+        sums = pc.add(sums, val)
+        total_counts = pc.add(total_counts, count)
+    has_vals: pa.Array = pc.greater(total_counts, zero)
+    safe_counts: pa.Array = pc.if_else(has_vals, total_counts, pa.scalar(1))
+    # The converter stores Hr1_* as int16; cast before dividing so the mean is not
+    # truncated by integer division (140,141,142,143 must give 141.5, not 141).
+    mean: pa.Array = pc.divide(pc.cast(sums, pa.float64()), safe_counts)
+    fhr: pa.Array = pc.if_else(has_vals, mean, pa.scalar(0.0))
+    return fhr.cast(pa.float32())
 
 
 def _compute_toco(batch: pa.RecordBatch) -> pa.Array:
@@ -458,6 +471,26 @@ def stage2_columnfilter(
             memory_pool.release_unused()
 
 
+def _stage3_babyid_expr(hash_func: str, babyid_salt: str) -> str:
+    """SQL expression hashing ``salt|PatientID|session_end`` into the pseudonymous BabyID."""
+    salt = babyid_salt.replace("'", "''")
+    return (
+        f"{hash_func}(concat('{salt}', '|', CAST(PatientID AS VARCHAR),"
+        f" '|', CAST(session_end AS VARCHAR)))"
+    )
+
+
+def _stage3_bucket_expr(bucket_count: int) -> str:
+    """SQL expression assigning each PatientID to a bucket in ``0..bucket_count-1``."""
+    return (
+        "CAST(("
+        "COALESCE("
+        "try_cast(right(CAST(PatientID AS VARCHAR), 4) AS UBIGINT), "
+        "hash(CAST(PatientID AS VARCHAR))"
+        f") % {bucket_count}) AS INTEGER)"
+    )
+
+
 def stage3_sessionfilter(
     input_dir: str | Path,
     output_file: str | Path,
@@ -501,20 +534,10 @@ def stage3_sessionfilter(
         return "md5"
 
     hash_func = _pick_hash_func()
-    salt = babyid_salt.replace("'", "''")
-    babyid_expr = (
-        f"{hash_func}(concat('{salt}', '|', CAST(PatientID AS VARCHAR),"
-        f" '|', CAST(session_end AS VARCHAR)))"
-    )
+    babyid_expr = _stage3_babyid_expr(hash_func, babyid_salt)
 
     def _bucket_expr() -> str:
-        return (
-            "CAST(("
-            "COALESCE("
-            "try_cast(right(CAST(PatientID AS VARCHAR), 4) AS UBIGINT), "
-            "hash(CAST(PatientID AS VARCHAR))"
-            f") % {bucket_count}) AS INTEGER)"
-        )
+        return _stage3_bucket_expr(bucket_count)
 
     def _build_query(extra_where: str) -> str:
         where_clause = ("\n    WHERE " + extra_where) if extra_where else ""
@@ -875,8 +898,8 @@ def stage6_partitioning(
     if total_rows is not None and batch_size:
         total_batches = (total_rows + batch_size - 1) // batch_size
 
-    anchor_babies = None
-    anchor_dates = None
+    anchor_babies: pa.Array | None = None
+    anchor_dates: pa.Array | None = None
     if not has_ctg_date:
         try:
             import duckdb
@@ -934,10 +957,11 @@ def stage6_partitioning(
                 else:
                     print(f"Stage6: {batches} batches, {rows} rows ({rate:,.0f} rows/s)")
             if not has_ctg_date:
+                if anchor_babies is None or anchor_dates is None:
+                    raise RuntimeError("Stage6: anchor dates were not computed.")
                 baby = batch.column(batch.schema.get_field_index("BabyID"))
                 idx = pc.index_in(baby, value_set=anchor_babies)
-                ctg_date = pc.take(anchor_dates, idx)
-                ctg_date = pc.cast(ctg_date, pa.date32())
+                ctg_date = pc.take(anchor_dates, idx).cast(pa.date32())
                 batch = batch.append_column("ctg_date", ctg_date)
             yield batch
         if report_every_batches:

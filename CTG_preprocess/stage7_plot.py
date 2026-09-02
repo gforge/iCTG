@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import NamedTuple
 
 import duckdb
 import matplotlib.pyplot as plt
@@ -9,6 +10,14 @@ import pandas as pd
 from matplotlib.patches import Patch
 
 from config import DEFAULT_STAGE7_CTG_PARQUET, DEFAULT_STAGE7_REGISTRY_CSV
+
+
+class _BandStyle(NamedTuple):
+    """Fill styling for a signal-quality band (used for both the span and its legend entry)."""
+
+    color: str
+    alpha: float
+    label: str
 
 
 def _safe(path: Path) -> str:
@@ -165,8 +174,8 @@ def _add_quality_bands(axes: list[plt.Axes], df_window: pd.DataFrame, mode: str)
         return []
 
     colors = {
-        "R": {"color": "#dc2626", "alpha": 0.12, "label": "Poor signal quality (R)"},
-        "Y": {"color": "#f59e0b", "alpha": 0.10, "label": "Intermediate signal quality (Y)"},
+        "R": _BandStyle(color="#dc2626", alpha=0.12, label="Poor signal quality (R)"),
+        "Y": _BandStyle(color="#f59e0b", alpha=0.10, label="Intermediate signal quality (Y)"),
     }
     seen: set[str] = set()
     for start, end, quality in intervals:
@@ -174,14 +183,14 @@ def _add_quality_bands(axes: list[plt.Axes], df_window: pd.DataFrame, mode: str)
             continue
         band = colors[quality]
         for ax in axes:
-            ax.axvspan(start, end, color=band["color"], alpha=band["alpha"], linewidth=0)
+            ax.axvspan(start, end, color=band.color, alpha=band.alpha, linewidth=0)
         seen.add(quality)
 
     return [
         Patch(
-            facecolor=colors[quality]["color"],
-            alpha=colors[quality]["alpha"],
-            label=colors[quality]["label"],
+            facecolor=colors[quality].color,
+            alpha=colors[quality].alpha,
+            label=colors[quality].label,
         )
         for quality in ("R", "Y")
         if quality in seen

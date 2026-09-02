@@ -1044,6 +1044,9 @@ def create_schema_evolution(output_dir: Path, formats: list[str], dpi: int) -> l
     return _save_figure(fig, output_dir, "ctg_dataset_structure_schema_evolution", formats, dpi)
 
 
+RASTER_FORMATS = frozenset({"png", "jpg", "jpeg", "tif", "tiff"})
+
+
 def _save_figure(
     fig: plt.Figure,
     output_dir: Path,
@@ -1055,10 +1058,10 @@ def _save_figure(
     saved_paths: list[Path] = []
     for fmt in formats:
         path = output_dir / f"{stem}.{fmt}"
-        save_kwargs = {"bbox_inches": "tight"}
-        if fmt.lower() in {"png", "jpg", "jpeg", "tif", "tiff"}:
-            save_kwargs["dpi"] = dpi
-        fig.savefig(path, **save_kwargs)
+        if fmt.lower() in RASTER_FORMATS:
+            fig.savefig(path, bbox_inches="tight", dpi=dpi)
+        else:
+            fig.savefig(path, bbox_inches="tight")
         saved_paths.append(path)
     plt.close(fig)
     return saved_paths

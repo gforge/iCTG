@@ -183,8 +183,10 @@ def _build_matches(con: duckdb.DuckDBPyConnection, include_birth_day_after_ctg: 
 
 
 def _scalar(con: duckdb.DuckDBPyConnection, sql: str) -> int:
-    value = con.execute(sql).fetchone()[0]
-    return int(value or 0)
+    row = con.execute(sql).fetchone()
+    if row is None:
+        raise RuntimeError(f"Query returned no rows: {sql}")
+    return int(row[0] or 0)
 
 
 def _print_summary(con: duckdb.DuckDBPyConnection, cutoff_date: str) -> None:
