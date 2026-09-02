@@ -212,7 +212,7 @@ def _create_reg_table(
     labour_day = _date_expr("etablerade_varkar_datum")
     labour_time_seconds = _int_expr("etablerade_varkar_tid")
     labour_timestamp = _timestamp_from_date_and_seconds(labour_day, labour_time_seconds)
-    mother_birth_date = "TRY_CAST(strptime(substr(regexp_replace(CAST(personnummer_mor AS VARCHAR), '[^0-9]', '', 'g'), 1, 8), '%Y%m%d') AS DATE)"
+    mother_birth_date = "TRY_CAST(try_strptime(substr(regexp_replace(CAST(personnummer_mor AS VARCHAR), '[^0-9]', '', 'g'), 1, 8), '%Y%m%d') AS DATE)"
     death_day = _date_expr("avled_datum")
 
     mother_diag_col = "moderns_diagnoser_rad"
