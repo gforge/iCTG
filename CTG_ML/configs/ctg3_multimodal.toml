@@ -109,3 +109,38 @@ early_stopping_enabled = true
 early_stopping_min_epochs = 10
 early_stopping_patience = 10
 early_stopping_min_delta = 0.0005
+# Self-supervised initialisation of the TCN sequence encoder (see [pretrain]).
+# Empty string = random init. `--init-encoder PATH` on the CLI overrides this.
+init_encoder = ""
+# Keep the sequence encoder frozen for the first N supervised epochs (0 = never frozen).
+freeze_encoder_epochs = 0
+
+[pretrain]
+# Self-supervised masked-reconstruction pretraining of the TCN sequence encoder on
+# unlabeled CTG windows from ALL sessions of ALL pregnancies (antenatal and earlier
+# labour sessions). Either a single parquet file or a directory of *.parquet buckets.
+pretrain_parquet = "data/CTG3/ctg_pretrain.parquet"
+window_minutes = 60
+stride_minutes = 30
+# Windows need at least this fraction of non-missing (non-zero) FHR samples.
+min_signal_fraction = 0.5
+# Fraction of timesteps whose FHR/toco inputs are zeroed, in contiguous spans.
+mask_ratio = 0.3
+mask_span_seconds = 30
+epochs = 30
+batch_size = 64
+lr = 0.001
+weight_decay = 0.0001
+# Drop windows overlapping the supervised last-hour window (`in_final_window` rows).
+exclude_final_window = true
+seed = 51
+# Outputs go to `<paths.artifacts_dir>/<out_subdir>/` (shards, metadata, encoder.pt).
+out_subdir = "pretrain"
+# Fraction of pretraining BabyIDs held out for early stopping on reconstruction loss.
+val_fraction = 0.1
+early_stopping_patience = 5
+windows_per_shard = 2048
+chunk_vectors_per_batch = 64
+decoder_hidden_dim = 64
+decoder_kernel_size = 9
+use_amp = true

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,40 @@ class MultimodalTrainConfig:
     early_stopping_min_epochs: int
     early_stopping_patience: int
     early_stopping_min_delta: float
+    # Optional path to a self-supervised `encoder.pt` (see scripts/pretrain_tcn.py).
+    # Empty string disables initialisation from a pretrained encoder.
+    init_encoder: str = ""
+    # Number of initial epochs during which the sequence encoder stays frozen.
+    freeze_encoder_epochs: int = 0
+
+
+@dataclass(frozen=True)
+class MultimodalPretrainConfig:
+    """Self-supervised masked-reconstruction pretraining of the TCN sequence encoder.
+
+    Defaults keep configs without a `[pretrain]` section loadable.
+    """
+
+    pretrain_parquet: Path = Path("data/CTG3/ctg_pretrain.parquet")
+    window_minutes: int = 60
+    stride_minutes: float = 30.0
+    min_signal_fraction: float = 0.5
+    mask_ratio: float = 0.3
+    mask_span_seconds: int = 30
+    epochs: int = 30
+    batch_size: int = 64
+    lr: float = 0.001
+    weight_decay: float = 0.0001
+    exclude_final_window: bool = True
+    seed: int = 51
+    out_subdir: str = "pretrain"
+    val_fraction: float = 0.1
+    early_stopping_patience: int = 5
+    windows_per_shard: int = 2048
+    chunk_vectors_per_batch: int = 64
+    decoder_hidden_dim: int = 64
+    decoder_kernel_size: int = 9
+    use_amp: bool = True
 
 
 @dataclass(frozen=True)
@@ -86,6 +121,35 @@ class MultimodalProjectConfig:
     registry: MultimodalRegistryConfig
     model: MultimodalModelConfig
     train: MultimodalTrainConfig
+    pretrain: MultimodalPretrainConfig = MultimodalPretrainConfig()
+
+
+def _load_pretrain_config(raw: dict[str, Any] | None) -> MultimodalPretrainConfig:
+    d = MultimodalPretrainConfig()
+    if not raw:
+        return d
+    return MultimodalPretrainConfig(
+        pretrain_parquet=Path(str(raw.get("pretrain_parquet", d.pretrain_parquet))),
+        window_minutes=int(raw.get("window_minutes", d.window_minutes)),
+        stride_minutes=float(raw.get("stride_minutes", d.stride_minutes)),
+        min_signal_fraction=float(raw.get("min_signal_fraction", d.min_signal_fraction)),
+        mask_ratio=float(raw.get("mask_ratio", d.mask_ratio)),
+        mask_span_seconds=int(raw.get("mask_span_seconds", d.mask_span_seconds)),
+        epochs=int(raw.get("epochs", d.epochs)),
+        batch_size=int(raw.get("batch_size", d.batch_size)),
+        lr=float(raw.get("lr", d.lr)),
+        weight_decay=float(raw.get("weight_decay", d.weight_decay)),
+        exclude_final_window=bool(raw.get("exclude_final_window", d.exclude_final_window)),
+        seed=int(raw.get("seed", d.seed)),
+        out_subdir=str(raw.get("out_subdir", d.out_subdir)),
+        val_fraction=float(raw.get("val_fraction", d.val_fraction)),
+        early_stopping_patience=int(raw.get("early_stopping_patience", d.early_stopping_patience)),
+        windows_per_shard=int(raw.get("windows_per_shard", d.windows_per_shard)),
+        chunk_vectors_per_batch=int(raw.get("chunk_vectors_per_batch", d.chunk_vectors_per_batch)),
+        decoder_hidden_dim=int(raw.get("decoder_hidden_dim", d.decoder_hidden_dim)),
+        decoder_kernel_size=int(raw.get("decoder_kernel_size", d.decoder_kernel_size)),
+        use_amp=bool(raw.get("use_amp", d.use_amp)),
+    )
 
 
 def load_multimodal_config(
@@ -170,5 +234,8 @@ def load_multimodal_config(
             early_stopping_min_epochs=int(train["early_stopping_min_epochs"]),
             early_stopping_patience=int(train["early_stopping_patience"]),
             early_stopping_min_delta=float(train["early_stopping_min_delta"]),
+            init_encoder=str(train.get("init_encoder", "")),
+            freeze_encoder_epochs=int(train.get("freeze_encoder_epochs", 0)),
         ),
+        pretrain=_load_pretrain_config(raw.get("pretrain")),
     )

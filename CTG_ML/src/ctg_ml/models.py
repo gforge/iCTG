@@ -113,8 +113,53 @@ class TCNEncoder(nn.Module):
         )
         self.out_dim = prev
 
+    def encode_sequence(self, x: torch.Tensor) -> torch.Tensor:
+        """Per-timestep features before pooling: (batch, out_dim, time)."""
+        return self.tcn(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.pool(self.tcn(x))
+        return self.pool(self.encode_sequence(x))
+
+
+class MaskedReconstructionTCN(nn.Module):
+    """TCNEncoder plus a light 1D conv decoder used for self-supervised pretraining.
+
+    The encoder is the unchanged `TCNEncoder`, so its `state_dict` can be loaded into
+    `MultimodalMultitaskTCN.sequence_encoder` after pretraining. The decoder is
+    non-causal (symmetric padding) so masked spans can be reconstructed from both sides.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        tcn_channels: list[int] | tuple[int, ...],
+        kernel_size: int,
+        dropout: float,
+        num_reconstructed_channels: int = 2,
+        decoder_hidden_dim: int = 64,
+        decoder_kernel_size: int = 9,
+    ) -> None:
+        super().__init__()
+        if decoder_kernel_size % 2 == 0:
+            raise ValueError("decoder_kernel_size must be odd to keep the sequence length")
+        self.encoder = TCNEncoder(
+            in_channels=in_channels,
+            channels=tcn_channels,
+            kernel_size=kernel_size,
+            dropout=dropout,
+        )
+        pad = (decoder_kernel_size - 1) // 2
+        self.decoder = nn.Sequential(
+            nn.Conv1d(self.encoder.out_dim, decoder_hidden_dim, decoder_kernel_size, padding=pad),
+            nn.ReLU(),
+            nn.Conv1d(
+                decoder_hidden_dim, num_reconstructed_channels, decoder_kernel_size, padding=pad
+            ),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (batch, in_channels, time) -> (batch, num_reconstructed_channels, time)
+        return self.decoder(self.encoder.encode_sequence(x))
 
 
 class MultimodalMultitaskTCN(nn.Module):

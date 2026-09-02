@@ -17,6 +17,7 @@ from tqdm import tqdm
 from ctg_ml.metrics import compute_binary_metrics
 from ctg_ml.models import MultimodalMultitaskTCN
 from ctg_ml.multimodal_config import load_multimodal_config
+from ctg_ml.pretrain import load_pretrained_encoder, set_encoder_frozen
 
 
 def set_training_seed(seed: int, deterministic: bool) -> None:
@@ -541,9 +542,37 @@ def main() -> None:
     parser.add_argument(
         "--metrics-out", default=None, help="Optional JSON path for final VAL/TEST metrics."
     )
+    parser.add_argument(
+        "--init-encoder",
+        default=None,
+        help=(
+            "Path to a self-supervised encoder.pt (scripts/pretrain_tcn.py) used to initialise "
+            "model.sequence_encoder. Overrides train.init_encoder in the config."
+        ),
+    )
+    parser.add_argument(
+        "--freeze-encoder-epochs",
+        type=int,
+        default=None,
+        help=(
+            "Keep the sequence encoder frozen for the first N epochs "
+            "(overrides train.freeze_encoder_epochs; default 0)."
+        ),
+    )
     args = parser.parse_args()
 
     cfg = load_multimodal_config(args.config)
+    init_encoder = args.init_encoder if args.init_encoder is not None else cfg.train.init_encoder
+    init_encoder_path = Path(init_encoder) if init_encoder else None
+    freeze_encoder_epochs = (
+        int(args.freeze_encoder_epochs)
+        if args.freeze_encoder_epochs is not None
+        else int(cfg.train.freeze_encoder_epochs)
+    )
+    if freeze_encoder_epochs < 0:
+        raise ValueError("--freeze-encoder-epochs must be >= 0")
+    if init_encoder_path is not None and not init_encoder_path.exists():
+        raise FileNotFoundError(f"Pretrained encoder not found: {init_encoder_path}")
     train_seed = int(args.seed_override) if args.seed_override is not None else int(cfg.train.seed)
     set_training_seed(train_seed, cfg.train.deterministic)
 
@@ -646,6 +675,25 @@ def main() -> None:
         num_binary_outputs=train_ds.y_bin.shape[1],
     ).to(device)
 
+    if init_encoder_path is not None:
+        encoder_ckpt = load_pretrained_encoder(
+            model, init_encoder_path, expected_channel_names=train_ds.sequence_channels
+        )
+        pre_norm = encoder_ckpt.get("normalization", {})
+        print(
+            f"Initialised sequence_encoder from pretrained encoder: {init_encoder_path} "
+            f"(pretrain epoch={encoder_ckpt.get('epoch')}, "
+            f"val_loss={encoder_ckpt.get('val_loss')}, channels={encoder_ckpt.get('channel_names')})"
+        )
+        print(
+            f"  pretrain normalization FHR/toco means={pre_norm.get('means')} "
+            f"stds={pre_norm.get('stds')} (supervised run keeps its own train-set stats above)"
+        )
+    else:
+        print("Sequence encoder: random initialisation (no --init-encoder)")
+    if freeze_encoder_epochs > 0:
+        print(f"Sequence encoder frozen for the first {freeze_encoder_epochs} epoch(s)")
+
     pos_weight_values = []
     for idx in range(train_ds.y_bin.shape[1]):
         valid = train_ds.y_bin_mask[:, idx] > 0
@@ -702,6 +750,11 @@ def main() -> None:
 
     for epoch in range(1, cfg.train.epochs + 1):
         print(f"\nEpoch {epoch}/{cfg.train.epochs}")
+        if freeze_encoder_epochs > 0:
+            encoder_frozen = epoch <= freeze_encoder_epochs
+            set_encoder_frozen(model, encoder_frozen)
+            if epoch == 1 or epoch == freeze_encoder_epochs + 1:
+                print(f"Sequence encoder {'frozen' if encoder_frozen else 'unfrozen'}")
         model.train()
         running = 0.0
         n = 0
@@ -846,6 +899,8 @@ def main() -> None:
                     "apgar_class_weight_power": cfg.train.apgar_class_weight_power,
                     "train_signal_means": means.tolist(),
                     "train_signal_stds": stds.tolist(),
+                    "init_encoder": str(init_encoder_path) if init_encoder_path else "",
+                    "freeze_encoder_epochs": freeze_encoder_epochs,
                 },
                 ckpt_path,
             )
@@ -914,6 +969,8 @@ def main() -> None:
             "ablate_tabular": bool(args.ablate_tabular),
             "ablated_tabular_columns": ablate_columns,
             "ablated_feature_indices": ablated_feature_indices,
+            "init_encoder": str(init_encoder_path) if init_encoder_path else "",
+            "freeze_encoder_epochs": freeze_encoder_epochs,
             "checkpoint_path": str(ckpt_path),
             "history_path": str(history_path),
             "val_metrics": val_metrics,

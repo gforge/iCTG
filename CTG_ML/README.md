@@ -90,6 +90,48 @@ Design notes:
 - CTG3 adds `gestational_days`, `previous_c_section`, and `neonatal_anemia`
 - The intended prediction moment is the last hour before birth, so late-labour variables in the config are intentional inputs
 
+## Self-supervised pretraining
+
+The TCN sequence encoder can be pretrained with masked reconstruction on unlabeled CTG
+windows from *all* sessions of *all* pregnancies (antenatal and earlier labour sessions),
+then used to initialise the supervised CTG3 model. Input is the stage 3 side output of
+`CTG_preprocess`: either a single parquet file or a directory of `all_sessions_bucket_*.parquet`
+files with columns `BabyID`, `session_id`, `Timestamp`, `FHR` (0 = missing), `toco`,
+`Hr1_SignalQuality`, `in_final_window`. Settings live in the `[pretrain]` section of the config.
+
+```bash
+# 1) Cut 60-min windows (stride 30 min) from every (BabyID, session_id) into NPZ shards.
+#    Val/test BabyIDs from artifacts_dir/splits.csv are ALWAYS excluded (fails without splits.csv
+#    unless --allow-no-splits); windows overlapping the supervised last-hour window are dropped.
+uv run python scripts/preprocess_pretrain.py --config configs/ctg3_multimodal.toml
+
+# 2) Masked-reconstruction pretraining -> artifacts_ctg3/pretrain/encoder.pt (+ pretrain_metrics.json)
+uv run python scripts/pretrain_tcn.py --config configs/ctg3_multimodal.toml
+
+# 3) Supervised training initialised from the pretrained encoder (optionally frozen for N epochs)
+uv run python scripts/train_multimodal_tcn.py --config configs/ctg3_multimodal.toml \
+  --init-encoder artifacts_ctg3/pretrain/encoder.pt --freeze-encoder-epochs 2
+```
+
+Design notes:
+
+- Windows are built with the same `_finalize_sequence` and channel order as the supervised
+  pipeline (`FHR`, `toco`, one-hot `Hr1_SignalQuality`, `padding_mask`), so
+  `sequence_encoder_state_dict` in `encoder.pt` loads strictly into
+  `MultimodalMultitaskTCN.sequence_encoder`. Channel count and names are verified on load.
+- Rows are reindexed onto a contiguous 1 Hz grid per session; a missing second becomes FHR=0
+  (missing), like the parquet's own missing encoding. Windows need `min_signal_fraction`
+  non-missing FHR samples.
+- Masking zeroes random contiguous spans (`mask_span_seconds`, ~`mask_ratio` of steps) in the
+  FHR/toco channels only. No extra mask-indicator channel is added because it would change the
+  encoder's input width; in normalized space a zero is exactly what the supervised model sees for
+  missing samples. The loss is MSE at masked positions where the raw signal was present.
+- Pretraining windows are split 90/10 by BabyID for early stopping on reconstruction loss.
+  `encoder.pt` also stores the pretraining normalization stats; the supervised run keeps using
+  its own train-set stats (both are printed).
+- `train.init_encoder` / `train.freeze_encoder_epochs` in the config are the defaults for the
+  two CLI flags.
+
 ## Legacy Workflows
 
 These are kept so earlier results can still be inspected or reproduced, but new work should start from the CTG3 workflow above.
