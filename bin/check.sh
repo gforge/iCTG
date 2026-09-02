@@ -26,14 +26,14 @@ run_lint() {
 
 run_types() {
     for project in "${PROJECTS[@]}"; do
-        echo "==> mypy: ${project#"$ROOT"/}"
+        echo "==> mypy: $(basename "$project")"
         (cd "$project" && uv run --no-sync mypy) || status=1
     done
 }
 
 run_tests() {
     for project in "${PROJECTS[@]}"; do
-        echo "==> pytest: ${project#"$ROOT"/}"
+        echo "==> pytest: $(basename "$project")"
         (cd "$project" && uv run --no-sync pytest -q) || status=1
     done
 }
