@@ -82,5 +82,6 @@ if [ -z "${TMUX:-}" ]; then
     fi
 fi
 
-# Execute the main Python script using uv
-uv run python -m src.ictg.convert.main "$@"
+# Execute the converter from the repository root so the installed `ictg` package is used
+cd "$(dirname "$0")/.."
+uv run python -m ictg.convert.main "$@"

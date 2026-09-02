@@ -50,6 +50,7 @@ def write_parquet_per_input(
     failure_tracker: FailureTracker | None = None,
 ) -> None:
     """Convert each matching input file into a parquet file in `out_dir`."""
+    out_dir.mkdir(parents=True, exist_ok=True)
     for glob_expr in glob_exprs:
         for path_str in sorted(glob.glob(glob_expr)):
             path = Path(path_str)

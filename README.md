@@ -1,57 +1,58 @@
 # iCTG
 
-A Python project for analyzing CTG (Cardiotocography) data
+Tools for turning raw cardiotocography (CTG) exports into an anonymized, registry-linked
+research dataset and training outcome-prediction models on it.
 
-## Installation
+The repository holds three independent Python projects, each with its own `pyproject.toml`,
+lockfile and virtual environment:
 
-This project uses [uv](https://github.com/astral-sh/uv) for fast Python package management.
+| Directory | Purpose |
+|-----------|---------|
+| `src/ictg` (this level) | Stream raw JSON / zip exports into parquet (`ictg` CLI) |
+| `CTG_preprocess/` | Seven-stage reduction of the parquet data and matching to registry data |
+| `CTG_ML/` | TCN / XGBoost experiments predicting neonatal outcomes from the final dataset |
 
-1. Install uv if you haven't already:
+Each sub-directory has its own README with the pipeline details.
 
-   ```bash
-   # Using snap (Linux)
-   sudo snap install astral-uv --classic
-   ```
+## Setup
 
-2. Install dependencies:
-   ```bash
-   uv sync
-   ```
-
-## Usage
-
-After installing dependencies with `uv sync`, you can run the script in several ways:
-
-### Option 1: Using uv run (recommended)
+All projects use [uv](https://github.com/astral-sh/uv) and Python >= 3.12.
 
 ```bash
-uv run python -m ictg.convert_raw_ctg_to_dataframe --help
+# converter (this directory)
+uv sync
+
+# preprocessing
+(cd CTG_preprocess && uv sync)
+
+# ML experiments – see CTG_ML/README.md for how to reuse the shared /opt torch install
+(cd CTG_ML && uv sync)
 ```
 
-### Option 2: Install in editable mode and run as command
+## Converter usage
 
 ```bash
-pip install -e .
-ictg --help
+# Preview the first 10 rows of a JSON export
+uv run ictg "data/*.json" --preview 10
+
+# Convert every export to parquet (one parquet file per input, resumable with --skip-existing)
+uv run ictg "data/*.zip" --parquet-out output/ --skip-existing
+
+# Long conversions: bin/convert.sh wraps the same command in a tmux session
+bin/convert.sh "data/*.zip" --parquet-out output/
 ```
 
-### Option 3: Run directly
+`uv run python -m ictg.convert.main` is equivalent to `uv run ictg`.
+
+## Development checks
+
+Lint and formatting use ruff with the shared `ruff.toml` at the repository root; type
+checking uses mypy and tests use pytest, configured per project in each `pyproject.toml`.
 
 ```bash
-python src/ictg/convert_raw_ctg_to_dataframe.py --help
+bin/check.sh          # ruff + mypy + pytest for all three projects
+bin/check.sh lint     # or: types | test
 ```
 
-### Examples
-
-```bash
-# Preview first 10 rows from JSON files
-uv run python -m ictg.convert_raw_ctg_to_dataframe "data/*.json" --preview 10
-
-# Convert to Parquet
-uv run python -m ictg.convert_raw_ctg_to_dataframe "data/*.zip" --parquet-out output/
-```
-
-## Dependencies
-
-- pandas: For data manipulation
-- pydantic: For data validation and models
+Inside a single project the same checks are `uvx ruff check .`, `uv run mypy` and
+`uv run pytest`.

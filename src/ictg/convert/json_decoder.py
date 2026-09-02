@@ -194,7 +194,7 @@ class ProgressReporter:
 
 
 def iter_concatenated_json(
-    stream: io.TextIOWrapper,
+    stream: io.TextIOBase,
     source: str,
     failure_tracker: FailureTracker | None = None,
     chunk_size: int = 1 << 20,

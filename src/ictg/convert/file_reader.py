@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-import zipfile_deflate64  # type: ignore  # noqa: F401 - monkey-patches zipfile
+import zipfile_deflate64  # noqa: F401 - monkey-patches zipfile
 
 JSON_SUFFIX = ".json"
 ZIP_SUFFIX = ".zip"

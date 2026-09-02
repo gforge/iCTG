@@ -27,11 +27,26 @@ This repository scaffold implements steps 1-2 and includes a PyTorch TCN model s
 
 ## Setup with uv
 
+`torch` is deliberately kept out of the default dependencies (it is in the optional
+`torch` dependency group) because the CUDA wheels are several gigabytes.
+
+On the shared GPU machine, reuse the torch build from the `/opt/compute` micromamba
+environment by creating the venv on that interpreter with access to its site-packages:
+
 ```bash
-uv venv
-source .venv/bin/activate
+uv venv --python /opt/compute/mamba-root/envs/ndl/bin/python3.13 --system-site-packages
 uv sync
+uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
+
+On any other machine install torch into the venv instead:
+
+```bash
+uv sync --group torch
+```
+
+Checks: `uv run mypy`, `uv run pytest`, and `uvx ruff check .` (configured by the
+`ruff.toml` at the repository root).
 
 ## Current CTG3 Workflow
 

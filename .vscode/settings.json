@@ -1,10 +1,13 @@
 {
-  "notebook.defaultFormatter": "ms-python.black-formatter",
-  "editor.defaultFormatter": "ms-python.black-formatter",
   "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports": "always"
+      "source.organizeImports.ruff": "explicit",
+      "source.fixAll.ruff": "explicit"
     }
   },
-  "isort.args": ["--profile", "black"],
+  "notebook.defaultFormatter": "charliermarsh.ruff",
+  "python.testing.pytestEnabled": true,
+  "mypy-type-checker.importStrategy": "fromEnvironment"
 }

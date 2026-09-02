@@ -25,7 +25,7 @@ If you prefer `pip`, install from `requirements.txt`.
 Edit `config.py` before running the pipeline.
 
 Important paths:
-- `DEFAULT_PARQUET_PATHS`: raw CTG parquet files
+- `DEFAULT_STAGE0_DIR`: directory with the raw CTG parquet files from the converter
 - `DEFAULT_PATIENT_CSV`: main registry file (`gravniva.csv`)
 - `DEFAULT_SNQ_FILE`: SNQ registry file
 - `DEFAULT_REDUCTION_ROOT`: root directory for Stage 1-7 outputs

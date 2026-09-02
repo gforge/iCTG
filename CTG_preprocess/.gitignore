@@ -29,3 +29,15 @@ registry_column_profile.md
 .codex
 count_patient_id_overlap.py
 CTG Project Reference Document.md
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data files must never be committed (patient data)
+*.parquet
+*.csv
+*.xlsx
+*.xls
+*.duckdb

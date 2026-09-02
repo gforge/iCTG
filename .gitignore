@@ -105,10 +105,19 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# mypy
+# mypy / ruff
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.ruff_cache/
+
+# Data files must never be committed (patient data)
+*.parquet
+*.csv
+*.xlsx
+*.xls
+*.duckdb
+*.npz
 
 # Pyre type checker
 .pyre/
