@@ -66,26 +66,32 @@ def _normalized_codes_expr(col: str) -> str:
     return f"regexp_replace(upper(coalesce({clean}, '')), '\\s+', '', 'g')"
 
 
-def _code_prefix_expr(col: str, prefixes: list[str], delimiter: str = ',') -> str:
+def _code_prefix_expr(col: str, prefixes: list[str], delimiter: str = ",") -> str:
     normalized = _normalized_codes_expr(col)
-    return '(' + ' OR '.join(
-        f"regexp_matches({normalized}, '(^|{delimiter}){prefix}[A-Z0-9]*($|{delimiter})')"
-        for prefix in prefixes
-    ) + ')'
+    return (
+        "("
+        + " OR ".join(
+            f"regexp_matches({normalized}, '(^|{delimiter}){prefix}[A-Z0-9]*($|{delimiter})')"
+            for prefix in prefixes
+        )
+        + ")"
+    )
 
 
-def _code_exact_expr(col: str, codes: list[str], delimiter: str = ',') -> str:
+def _code_exact_expr(col: str, codes: list[str], delimiter: str = ",") -> str:
     normalized = _normalized_codes_expr(col)
-    return '(' + ' OR '.join(
-        f"regexp_matches({normalized}, '(^|{delimiter}){code}($|{delimiter})')"
-        for code in codes
-    ) + ')'
+    return (
+        "("
+        + " OR ".join(
+            f"regexp_matches({normalized}, '(^|{delimiter}){code}($|{delimiter})')"
+            for code in codes
+        )
+        + ")"
+    )
 
 
 def _normalized_glopnr_expr(col: str) -> str:
-    return (
-        f"NULLIF(regexp_replace(regexp_replace(trim(CAST({col} AS VARCHAR)), '\\.0+$', ''), '\\s+', '', 'g'), '')"
-    )
+    return f"NULLIF(regexp_replace(regexp_replace(trim(CAST({col} AS VARCHAR)), '\\.0+$', ''), '\\s+', '', 'g'), '')"
 
 
 def _has_value_expr(col: str) -> str:
@@ -94,10 +100,10 @@ def _has_value_expr(col: str) -> str:
 
 def _load_snq_view(con: duckdb.DuckDBPyConnection, snq_file: Path) -> None:
     if not snq_file.exists():
-        raise FileNotFoundError(f'SNQ file not found: {snq_file}')
+        raise FileNotFoundError(f"SNQ file not found: {snq_file}")
 
     suffix = snq_file.suffix.lower()
-    if suffix == '.csv':
+    if suffix == ".csv":
         safe_snq = str(snq_file).replace("'", "''")
         con.execute(
             f"""
@@ -107,11 +113,11 @@ def _load_snq_view(con: duckdb.DuckDBPyConnection, snq_file: Path) -> None:
         )
         return
 
-    if suffix in {'.xlsx', '.xls'}:
+    if suffix in {".xlsx", ".xls"}:
         import pandas as pd
 
         snq_df = pd.read_excel(snq_file, dtype=str)
-        con.register('snq_raw_df', snq_df)
+        con.register("snq_raw_df", snq_df)
         con.execute(
             """
             CREATE VIEW snq_raw AS
@@ -120,7 +126,7 @@ def _load_snq_view(con: duckdb.DuckDBPyConnection, snq_file: Path) -> None:
         )
         return
 
-    raise ValueError(f'Unsupported SNQ file type: {snq_file.suffix}')
+    raise ValueError(f"Unsupported SNQ file type: {snq_file.suffix}")
 
 
 def registry_match(
@@ -145,12 +151,12 @@ def registry_match(
     con = duckdb.connect()
     if show_progress:
         try:
-            con.execute('PRAGMA enable_progress_bar')
-            con.execute('PRAGMA progress_bar_time=5')
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
         except Exception:
             pass
     try:
-        con.execute('SET preserve_insertion_order=false')
+        con.execute("SET preserve_insertion_order=false")
     except Exception:
         pass
 
@@ -166,53 +172,57 @@ def registry_match(
     )
     _load_snq_view(con, snq_file)
 
-    smoke_pre = _clean_text_expr('tobak_3_manader_fore_graviditet')
-    smoke_inskrivning = _clean_text_expr('tobak_inskrivning')
-    smoke_w30 = _clean_text_expr('tobak_vecka_30_32')
-    sex_raw = _clean_text_expr('kon')
-    ph_art = _float_expr('ph_navelartar')
-    ph_ven = _float_expr('ph_navelven')
-    birth_day = _date_expr('forlossningsdatum_fv1')
-    birth_time_seconds = _int_expr('forlossningstid_fv1')
+    smoke_pre = _clean_text_expr("tobak_3_manader_fore_graviditet")
+    smoke_inskrivning = _clean_text_expr("tobak_inskrivning")
+    smoke_w30 = _clean_text_expr("tobak_vecka_30_32")
+    sex_raw = _clean_text_expr("kon")
+    ph_art = _float_expr("ph_navelartar")
+    ph_ven = _float_expr("ph_navelven")
+    birth_day = _date_expr("forlossningsdatum_fv1")
+    birth_time_seconds = _int_expr("forlossningstid_fv1")
     birth_timestamp = _timestamp_from_date_and_seconds(birth_day, birth_time_seconds)
-    labour_day = _date_expr('etablerade_varkar_datum')
-    labour_time_seconds = _int_expr('etablerade_varkar_tid')
+    labour_day = _date_expr("etablerade_varkar_datum")
+    labour_time_seconds = _int_expr("etablerade_varkar_tid")
     labour_timestamp = _timestamp_from_date_and_seconds(labour_day, labour_time_seconds)
     mother_birth_date = "TRY_CAST(strptime(substr(regexp_replace(CAST(personnummer_mor AS VARCHAR), '[^0-9]', '', 'g'), 1, 8), '%Y%m%d') AS DATE)"
-    death_day = _date_expr('avled_datum')
+    death_day = _date_expr("avled_datum")
 
-    mother_diag_col = 'moderns_diagnoser_rad'
-    mother_proc_col = 'moderns_atgarder_rad'
-    child_diag_col = 'barnets_diagnoser_rad'
-    child_proc_col = 'barnets_atgarder_rad'
+    mother_diag_col = "moderns_diagnoser_rad"
+    mother_proc_col = "moderns_atgarder_rad"
+    child_diag_col = "barnets_diagnoser_rad"
+    child_proc_col = "barnets_atgarder_rad"
 
-    gest_htn = _code_prefix_expr(mother_diag_col, ['O13', 'O16'])
-    preeclampsia = _code_prefix_expr(mother_diag_col, ['O14', 'O15'])
-    diabetes = _code_prefix_expr(mother_diag_col, ['O24'])
-    uterine_rupture_diag = _code_exact_expr(mother_diag_col, ['O710', 'O711'])
-    sepsis = _code_prefix_expr(mother_diag_col, ['A41'])
-    placental_abruption = _code_exact_expr(mother_diag_col, ['O711'])
-    heavy_bleeding = _code_prefix_expr(mother_diag_col, ['O46', 'O67'])
-    cord_prolapse = _code_exact_expr(mother_diag_col, ['O690'])
-    shoulder_dystocia_diag = _code_prefix_expr(mother_diag_col, ['O66'])
-    labor_dystocia = _code_exact_expr(mother_diag_col, ['O620', 'O621', 'O628', 'O629'])
+    gest_htn = _code_prefix_expr(mother_diag_col, ["O13", "O16"])
+    preeclampsia = _code_prefix_expr(mother_diag_col, ["O14", "O15"])
+    diabetes = _code_prefix_expr(mother_diag_col, ["O24"])
+    uterine_rupture_diag = _code_exact_expr(mother_diag_col, ["O710", "O711"])
+    sepsis = _code_prefix_expr(mother_diag_col, ["A41"])
+    placental_abruption = _code_exact_expr(mother_diag_col, ["O711"])
+    heavy_bleeding = _code_prefix_expr(mother_diag_col, ["O46", "O67"])
+    cord_prolapse = _code_exact_expr(mother_diag_col, ["O690"])
+    shoulder_dystocia_diag = _code_prefix_expr(mother_diag_col, ["O66"])
+    labor_dystocia = _code_exact_expr(mother_diag_col, ["O620", "O621", "O628", "O629"])
 
-    oxytocin = _code_exact_expr(mother_proc_col, ['DT036', 'DT037'])
-    uterine_rupture_proc = _code_exact_expr(mother_proc_col, ['MCC00'])
+    oxytocin = _code_exact_expr(mother_proc_col, ["DT036", "DT037"])
+    uterine_rupture_proc = _code_exact_expr(mother_proc_col, ["MCC00"])
 
-    severe_asphyxia_diag = _code_exact_expr(child_diag_col, ['P210', 'P808', 'P809'])
-    meconium = _code_exact_expr(child_diag_col, ['P240'])
-    shoulder_dystocia_child = _code_exact_expr(child_diag_col, ['P140', 'P141', 'P143', 'P148', 'P149'])
-    hypoglycemia_treatment = _code_exact_expr(child_diag_col, ['P703', 'P704A', 'P704B', 'P708', 'P709'])
-    neonatal_anemia = _code_exact_expr(child_diag_col, ['P612', 'P613', 'P614'])
-    severe_asphyxia_proc = _code_exact_expr(child_proc_col, ['DV034'])
+    severe_asphyxia_diag = _code_exact_expr(child_diag_col, ["P210", "P808", "P809"])
+    meconium = _code_exact_expr(child_diag_col, ["P240"])
+    shoulder_dystocia_child = _code_exact_expr(
+        child_diag_col, ["P140", "P141", "P143", "P148", "P149"]
+    )
+    hypoglycemia_treatment = _code_exact_expr(
+        child_diag_col, ["P703", "P704A", "P704B", "P708", "P709"]
+    )
+    neonatal_anemia = _code_exact_expr(child_diag_col, ["P612", "P613", "P614"])
+    severe_asphyxia_proc = _code_exact_expr(child_proc_col, ["DV034"])
     respirator_grav = (
         f"({_has_value_expr('ventilation_pa_mask_min')} OR "
         f"{_has_value_expr('intubation_min')} OR "
         f"{_has_value_expr('hjartmassage_min')})"
     )
 
-    snq_glopnr = _normalized_glopnr_expr('glopnr')
+    snq_glopnr = _normalized_glopnr_expr("glopnr")
     snq_highest_hie = _int_expr('"Högst HIE"')
     snq_hie = _bool_ja_nej_expr('"HIE"')
     snq_icd_col = '"ICD_kod"'
@@ -223,7 +233,7 @@ def registry_match(
         CREATE TEMP TABLE reg AS
         SELECT
             row_number() OVER () AS reg_row,
-            {_normalized_glopnr_expr('glopnr')} AS glopnr,
+            {_normalized_glopnr_expr("glopnr")} AS glopnr,
             regexp_replace(CAST(personnummer_mor AS VARCHAR), '[^0-9]', '', 'g') AS reg_digits,
             {birth_day} AS birth_day,
             {birth_time_seconds} AS birth_time_seconds,
@@ -245,29 +255,29 @@ def registry_match(
                     date_diff('second', {labour_timestamp}, {birth_timestamp})
                 ELSE NULL
             END AS etablerade_varkar_seconds,
-            {_clean_text_expr('forlossningsstart_basta_skattning')} AS forlossningsstart,
-            {_clean_text_expr('forlossningsslut_basta_skattning')} AS forlossningsslut,
-            {_int_expr('apgar_1_min')} AS apgar1,
-            {_int_expr('apgar_5_min')} AS apgar5,
-            {_int_expr('apgar_10_min')} AS apgar10,
-            ({_int_expr('gl_v_barn')} * 7 + {_int_expr('gl_d_barn')}) AS gestational_days,
-            {_clean_text_expr('fodelseland')} AS fodelseland,
-            {_clean_text_expr('utbildningsniva')} AS utbildningsniva,
-            {_int_expr('para_mhv1')} AS para_mhv1,
-            {_float_expr('langd_inskrivning_cm')} AS langd_inskrivning_cm,
-            {_float_expr('bmi_inskrivning')} AS bmi_inskrivning,
-            CASE WHEN lower(coalesce({_clean_text_expr('tidigare_sectio')}, '')) = 'ja' THEN TRUE ELSE FALSE END AS previous_c_section,
+            {_clean_text_expr("forlossningsstart_basta_skattning")} AS forlossningsstart,
+            {_clean_text_expr("forlossningsslut_basta_skattning")} AS forlossningsslut,
+            {_int_expr("apgar_1_min")} AS apgar1,
+            {_int_expr("apgar_5_min")} AS apgar5,
+            {_int_expr("apgar_10_min")} AS apgar10,
+            ({_int_expr("gl_v_barn")} * 7 + {_int_expr("gl_d_barn")}) AS gestational_days,
+            {_clean_text_expr("fodelseland")} AS fodelseland,
+            {_clean_text_expr("utbildningsniva")} AS utbildningsniva,
+            {_int_expr("para_mhv1")} AS para_mhv1,
+            {_float_expr("langd_inskrivning_cm")} AS langd_inskrivning_cm,
+            {_float_expr("bmi_inskrivning")} AS bmi_inskrivning,
+            CASE WHEN lower(coalesce({_clean_text_expr("tidigare_sectio")}, '')) = 'ja' THEN TRUE ELSE FALSE END AS previous_c_section,
             {smoke_pre} AS tobak_3_manader_fore_graviditet,
             {smoke_inskrivning} AS tobak_inskrivning,
             {smoke_w30} AS tobak_vecka_30_32,
             CASE
-                WHEN {_smoke_detect_expr('tobak_3_manader_fore_graviditet')}
-                  OR {_smoke_detect_expr('tobak_inskrivning')}
-                  OR {_smoke_detect_expr('tobak_vecka_30_32')}
+                WHEN {_smoke_detect_expr("tobak_3_manader_fore_graviditet")}
+                  OR {_smoke_detect_expr("tobak_inskrivning")}
+                  OR {_smoke_detect_expr("tobak_vecka_30_32")}
                 THEN TRUE
                 ELSE FALSE
             END AS is_smoker,
-            {_bool_ja_nej_expr('diabetes_mellitus')} AS diabetes_mellitus,
+            {_bool_ja_nej_expr("diabetes_mellitus")} AS diabetes_mellitus,
             CASE
                 WHEN {sex_raw} = 'Flicka' THEN 'Flicka'
                 WHEN {sex_raw} IS NULL THEN NULL
@@ -278,7 +288,7 @@ def registry_match(
                 WHEN {sex_raw} IS NULL THEN NULL
                 ELSE FALSE
             END AS is_girl,
-            {_int_expr('alkohol_audit_poang')} AS alkohol_audit_poang,
+            {_int_expr("alkohol_audit_poang")} AS alkohol_audit_poang,
             {ph_art} AS ph_navelartar,
             {ph_ven} AS ph_navelven,
             CASE
@@ -323,10 +333,10 @@ def registry_match(
                 {snq_glopnr} AS glopnr,
                 {snq_highest_hie} AS highest_hie,
                 {snq_hie} AS hie,
-                {_code_prefix_expr(snq_icd_col, ['P10', 'P52'], delimiter=';')} AS intracranial_haemorrhage,
-                {_code_prefix_expr(snq_icd_col, ['P90'], delimiter=';')} AS neonatal_convulsions,
-                {_code_prefix_expr(snq_icd_col, ['P23', 'P36', 'P392'], delimiter=';')} AS neonatal_sepsis_or_pneumonia,
-                {_code_prefix_expr(snq_kva_col, ['DG021', 'DG022', 'DG0002'], delimiter=';')} AS respiratorbehandling
+                {_code_prefix_expr(snq_icd_col, ["P10", "P52"], delimiter=";")} AS intracranial_haemorrhage,
+                {_code_prefix_expr(snq_icd_col, ["P90"], delimiter=";")} AS neonatal_convulsions,
+                {_code_prefix_expr(snq_icd_col, ["P23", "P36", "P392"], delimiter=";")} AS neonatal_sepsis_or_pneumonia,
+                {_code_prefix_expr(snq_kva_col, ["DG021", "DG022", "DG0002"], delimiter=";")} AS respiratorbehandling
             FROM snq_raw
         )
         SELECT
@@ -587,15 +597,15 @@ def registry_match(
         """
     )
 
-    total_rows = con.execute('SELECT COUNT(*) FROM reg_raw').fetchone()[0]
-    clean_rows = con.execute('SELECT COUNT(*) FROM reg_clean').fetchone()[0]
-    match_rows = con.execute('SELECT COUNT(*) FROM unique_matches').fetchone()[0]
+    total_rows = con.execute("SELECT COUNT(*) FROM reg_raw").fetchone()[0]
+    clean_rows = con.execute("SELECT COUNT(*) FROM reg_clean").fetchone()[0]
+    match_rows = con.execute("SELECT COUNT(*) FROM unique_matches").fetchone()[0]
 
-    print(f'Registry rows total: {total_rows}')
-    print(f'Registry rows with valid apgar/birth_day: {clean_rows}')
-    print(f'Matched rows: {match_rows}')
+    print(f"Registry rows total: {total_rows}")
+    print(f"Registry rows with valid apgar/birth_day: {clean_rows}")
+    print(f"Matched rows: {match_rows}")
     if multi_rows:
-        print(f'WARNING: {multi_rows} registry rows matched multiple BabyIDs and were dropped.')
+        print(f"WARNING: {multi_rows} registry rows matched multiple BabyIDs and were dropped.")
 
     con.execute(
         f"""
@@ -677,11 +687,11 @@ def registry_match(
         """
     )
 
-    s6_cols = {row[0] for row in con.execute('DESCRIBE SELECT * FROM s6').fetchall()}
-    keep_cols = ['BabyID', 'Timestamp', 'FHR', 'toco'] + [
+    s6_cols = {row[0] for row in con.execute("DESCRIBE SELECT * FROM s6").fetchall()}
+    keep_cols = ["BabyID", "Timestamp", "FHR", "toco"] + [
         name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in s6_cols
     ]
-    ctg_select = ', '.join(f's6.{name}' for name in keep_cols)
+    ctg_select = ", ".join(f"s6.{name}" for name in keep_cols)
 
     con.execute(
         f"""
@@ -694,19 +704,19 @@ def registry_match(
         """
     )
 
-    print(f'Wrote registry CSV: {registry_out}')
-    print(f'Wrote CTG parquet: {ctg_out}')
+    print(f"Wrote registry CSV: {registry_out}")
+    print(f"Wrote CTG parquet: {ctg_out}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Stage 7 registry matching and anonymized output.')
-    parser.add_argument('--registry-csv', type=str, default=DEFAULT_PATIENT_CSV)
-    parser.add_argument('--snq-file', type=str, default=DEFAULT_SNQ_FILE)
-    parser.add_argument('--stage5-5', type=str, default=DEFAULT_STAGE5_5_OUTPUT_FILE)
-    parser.add_argument('--stage6', type=str, default=DEFAULT_STAGE6_DIR)
-    parser.add_argument('--registry-out', type=str, default=DEFAULT_STAGE7_REGISTRY_CSV)
-    parser.add_argument('--ctg-out', type=str, default=DEFAULT_STAGE7_CTG_PARQUET)
-    parser.add_argument('--no-progress', action='store_true')
+    parser = argparse.ArgumentParser(description="Stage 7 registry matching and anonymized output.")
+    parser.add_argument("--registry-csv", type=str, default=DEFAULT_PATIENT_CSV)
+    parser.add_argument("--snq-file", type=str, default=DEFAULT_SNQ_FILE)
+    parser.add_argument("--stage5-5", type=str, default=DEFAULT_STAGE5_5_OUTPUT_FILE)
+    parser.add_argument("--stage6", type=str, default=DEFAULT_STAGE6_DIR)
+    parser.add_argument("--registry-out", type=str, default=DEFAULT_STAGE7_REGISTRY_CSV)
+    parser.add_argument("--ctg-out", type=str, default=DEFAULT_STAGE7_CTG_PARQUET)
+    parser.add_argument("--no-progress", action="store_true")
     args = parser.parse_args()
 
     registry_match(
@@ -720,5 +730,5 @@ def main() -> None:
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

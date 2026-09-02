@@ -14,12 +14,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 
-DEFAULT_INPUT = (
-    "artifacts_ctg3/xgboost_registry_plus_ctg_embedding/xgboost_grouped_importance.csv"
-)
-DEFAULT_OUTPUT = (
-    "artifacts_ctg3/xgboost_registry_plus_ctg_embedding/xgboost_importance_heatmap.png"
-)
+DEFAULT_INPUT = "artifacts_ctg3/xgboost_registry_plus_ctg_embedding/xgboost_grouped_importance.csv"
+DEFAULT_OUTPUT = "artifacts_ctg3/xgboost_registry_plus_ctg_embedding/xgboost_importance_heatmap.png"
 
 TARGET_LABELS = {
     "apgar1_below7": "Apgar 1 < 7",

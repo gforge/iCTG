@@ -76,11 +76,11 @@ def _finalize_one_sequence(
 
     fhr_missing = ~np.isfinite(fhr)
     if cfg.treat_fhr_zero_as_missing:
-        fhr_missing |= (fhr == 0.0)
+        fhr_missing |= fhr == 0.0
 
     toco_missing = ~np.isfinite(toco)
     if cfg.treat_toco_zero_as_missing:
-        toco_missing |= (toco == 0.0)
+        toco_missing |= toco == 0.0
 
     fhr = fhr.astype(np.float32, copy=False)
     toco = toco.astype(np.float32, copy=False)
@@ -183,7 +183,9 @@ def _process_split_chunked(
 
             for baby_id, group in full_chunk.groupby("BabyID", sort=False):
                 baby_id = str(baby_id)
-                seq, label, raw_len = _finalize_one_sequence(baby_id, group, label_by_baby, apgar_by_baby, cfg)
+                seq, label, raw_len = _finalize_one_sequence(
+                    baby_id, group, label_by_baby, apgar_by_baby, cfg
+                )
                 row_counts.append(raw_len)
                 if seq is None:
                     dropped_short += 1
@@ -197,7 +199,9 @@ def _process_split_chunked(
 
         if carry is not None and not carry.empty:
             baby_id = str(carry["BabyID"].iloc[0])
-            seq, label, raw_len = _finalize_one_sequence(baby_id, carry, label_by_baby, apgar_by_baby, cfg)
+            seq, label, raw_len = _finalize_one_sequence(
+                baby_id, carry, label_by_baby, apgar_by_baby, cfg
+            )
             row_counts.append(raw_len)
             if seq is None:
                 dropped_short += 1
@@ -225,7 +229,9 @@ def _process_split_chunked(
         channels=np.array(cfg.channel_names),
     )
 
-    row_arr = np.asarray(row_counts, dtype=np.int32) if row_counts else np.array([0], dtype=np.int32)
+    row_arr = (
+        np.asarray(row_counts, dtype=np.int32) if row_counts else np.array([0], dtype=np.int32)
+    )
     return SplitBuildStats(
         split_name=str(split_df["split"].iloc[0]),
         total_babies=total_babies,
@@ -260,6 +266,8 @@ def build_tcn_npz_files(
         if split_part.empty:
             continue
         out_path = out_dir / f"{split_name}.npz"
-        split_stats = _process_split_chunked(ctg_parquet=ctg_parquet, split_df=split_part, cfg=cfg, out_path=out_path)
+        split_stats = _process_split_chunked(
+            ctg_parquet=ctg_parquet, split_df=split_part, cfg=cfg, out_path=out_path
+        )
         stats.append(split_stats)
     return stats

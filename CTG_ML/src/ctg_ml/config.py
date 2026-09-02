@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-import tomllib
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,9 @@ def load_config(path: str | Path = "configs/default.toml") -> ProjectConfig:
             pad_short=bool(raw["sequence"]["pad_short"]),
             treat_fhr_zero_as_missing=bool(raw["sequence"]["treat_fhr_zero_as_missing"]),
             include_fhr_missing_mask=bool(raw["sequence"]["include_fhr_missing_mask"]),
-            treat_toco_zero_as_missing=bool(raw["sequence"].get("treat_toco_zero_as_missing", True)),
+            treat_toco_zero_as_missing=bool(
+                raw["sequence"].get("treat_toco_zero_as_missing", True)
+            ),
             include_toco_missing_mask=bool(raw["sequence"].get("include_toco_missing_mask", True)),
             include_padding_mask=bool(raw["sequence"].get("include_padding_mask", True)),
             output_dir=Path(raw["sequence"]["output_dir"]),
@@ -133,7 +135,9 @@ def load_config(path: str | Path = "configs/default.toml") -> ProjectConfig:
             gradient_clip_norm=float(raw["tcn"].get("gradient_clip_norm", 0.0)),
             use_weighted_sampler=bool(raw["tcn"].get("use_weighted_sampler", False)),
             use_balanced_batch_sampler=bool(raw["tcn"].get("use_balanced_batch_sampler", False)),
-            balanced_min_positives_per_batch=int(raw["tcn"].get("balanced_min_positives_per_batch", 1)),
+            balanced_min_positives_per_batch=int(
+                raw["tcn"].get("balanced_min_positives_per_batch", 1)
+            ),
             disable_pos_weight_with_balanced_sampler=bool(
                 raw["tcn"].get("disable_pos_weight_with_balanced_sampler", True)
             ),

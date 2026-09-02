@@ -2,7 +2,7 @@
 
 import glob
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -44,10 +44,10 @@ PARQUET_SCHEMA = pa.schema(PARQUET_FIELDS)
 def write_parquet_per_input(
     glob_exprs: list[str],
     out_dir: Path,
-    member: Optional[str] = None,
+    member: str | None = None,
     batch_size: int = 50_000,
     skip_existing: bool = False,
-    failure_tracker: Optional[FailureTracker] = None,
+    failure_tracker: FailureTracker | None = None,
 ) -> None:
     """Convert each matching input file into a parquet file in `out_dir`."""
     for glob_expr in glob_exprs:
@@ -65,13 +65,11 @@ def write_parquet_per_input(
             temp_path = output_paths["temp"]
             logger.info("Starting %s -> %s", path, out_path)
 
-            writer: Optional[pq.ParquetWriter] = None
-            batch: List[Dict[str, Any]] = []
+            writer: pq.ParquetWriter | None = None
+            batch: list[dict[str, Any]] = []
             total_records = 0
             try:
-                for rec in records_from_path(
-                    path, member, failure_tracker=failure_tracker
-                ):
+                for rec in records_from_path(path, member, failure_tracker=failure_tracker):
                     batch.append(normalize_patient_record(rec))
                     if len(batch) >= batch_size:
                         _flush_parquet_batch(
@@ -88,9 +86,7 @@ def write_parquet_per_input(
                         )
                         batch.clear()
                 if batch:
-                    _flush_parquet_batch(
-                        batch, temp_path, writer_container := {"writer": writer}
-                    )
+                    _flush_parquet_batch(batch, temp_path, writer_container := {"writer": writer})
                     writer = writer_container["writer"]
                     total_records += len(batch)
                     logger.info(
@@ -135,7 +131,7 @@ def _prepare_output_paths(
     out_dir: Path,
     *,
     skip_existing: bool,
-) -> Dict[str, Path] | None:
+) -> dict[str, Path] | None:
     if path.suffix.lower() not in {JSON_SUFFIX, ZIP_SUFFIX} or not path.is_file():
         logger.warning("Skipping unsupported file: %s", path)
         return None
@@ -146,9 +142,7 @@ def _prepare_output_paths(
     if out_path.exists() and skip_existing:
         if temp_path.exists():
             temp_path.unlink()
-            logger.info(
-                "Removed stale temporary file for skipped output: %s", temp_path
-            )
+            logger.info("Removed stale temporary file for skipped output: %s", temp_path)
         logger.info("Skipping existing output: %s", out_path)
         return None
 
@@ -163,7 +157,7 @@ def _prepare_output_paths(
 
 
 def _flush_parquet_batch(
-    batch: List[Dict[str, Any]], out_path: Path, writer_container: Dict[str, Any]
+    batch: list[dict[str, Any]], out_path: Path, writer_container: dict[str, Any]
 ) -> None:
     table = pa.Table.from_pylist(batch, schema=PARQUET_SCHEMA)
     writer = writer_container.get("writer")

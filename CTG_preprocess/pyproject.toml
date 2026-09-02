@@ -12,3 +12,26 @@ dependencies = [
     "pandas>=3.0.0",
     "pyarrow>=23.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14",
+    "pandas-stubs>=2.3.2",
+    "pyarrow-stubs>=20.0.0.20251215",
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["."]
+exclude = ["legacy/", "\\.venv/"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import math
-from pathlib import Path
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -101,8 +101,16 @@ class BalancedBatchSampler(Sampler[list[int]]):
             pos_target = max(min(pos_target, current_bs), 0)
             neg_target = current_bs - pos_target
 
-            pos = rng.choice(self.pos_indices, size=pos_target, replace=True) if pos_target else np.array([], dtype=np.int64)
-            neg = rng.choice(self.neg_indices, size=neg_target, replace=True) if neg_target else np.array([], dtype=np.int64)
+            pos = (
+                rng.choice(self.pos_indices, size=pos_target, replace=True)
+                if pos_target
+                else np.array([], dtype=np.int64)
+            )
+            neg = (
+                rng.choice(self.neg_indices, size=neg_target, replace=True)
+                if neg_target
+                else np.array([], dtype=np.int64)
+            )
             batch = np.concatenate([pos, neg]).astype(np.int64, copy=False)
             rng.shuffle(batch)
             yield batch.tolist()
@@ -260,7 +268,9 @@ def eval_loss(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a TCN on preprocessed fixed-length CTG sequences (NPZ).")
+    parser = argparse.ArgumentParser(
+        description="Train a TCN on preprocessed fixed-length CTG sequences (NPZ)."
+    )
     parser.add_argument("--config", default="configs/default.toml")
     parser.add_argument("--train-npz", help="Path to train sequence NPZ (X, y)")
     parser.add_argument("--val-npz", help="Path to val sequence NPZ (X, y)")
@@ -287,7 +297,9 @@ def main() -> None:
     val_ds = NPZSequenceDataset(val_npz)
     test_ds = NPZSequenceDataset(test_npz) if test_npz.exists() else None
     if len(train_ds) == 0 or len(val_ds) == 0:
-        print("Train/val NPZ is empty. This usually means preprocessing dropped too many sequences.")
+        print(
+            "Train/val NPZ is empty. This usually means preprocessing dropped too many sequences."
+        )
         print("Try `uv run python scripts/preprocess_tcn.py --pad-short` or reduce window length.")
         return
 
@@ -302,7 +314,9 @@ def main() -> None:
     )
     if train_ds.channel_names:
         print(f"Channels:   {train_ds.channel_names}")
-    print(f"Val NPZ:   {val_npz} X={val_ds.X.shape} positives={int((val_ds.y == 1).sum())}/{len(val_ds)}")
+    print(
+        f"Val NPZ:   {val_npz} X={val_ds.X.shape} positives={int((val_ds.y == 1).sum())}/{len(val_ds)}"
+    )
     if test_ds is not None:
         print(
             f"Test NPZ:  {test_npz} X={test_ds.X.shape} positives={int((test_ds.y == 1).sum())}/{len(test_ds)}"
@@ -371,7 +385,13 @@ def main() -> None:
         val_ds, batch_size=cfg.tcn.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda
     )
     test_loader = (
-        DataLoader(test_ds, batch_size=cfg.tcn.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda)
+        DataLoader(
+            test_ds,
+            batch_size=cfg.tcn.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=use_cuda,
+        )
         if test_ds is not None
         else None
     )
@@ -436,10 +456,14 @@ def main() -> None:
             gradient_clip_norm=cfg.tcn.gradient_clip_norm,
             show_progress=show_progress,
         )
-        val_loss = eval_loss(model, val_loader, criterion, device, use_amp=use_amp, show_progress=False)
+        val_loss = eval_loss(
+            model, val_loader, criterion, device, use_amp=use_amp, show_progress=False
+        )
         y_val, val_prob = predict_probs(model, val_loader, device, use_amp=use_amp)
         val_thr = best_f1_threshold(y_val.astype(int), val_prob.astype(float))
-        val_metrics = compute_binary_metrics(y_val.astype(int), val_prob.astype(float), threshold=val_thr)
+        val_metrics = compute_binary_metrics(
+            y_val.astype(int), val_prob.astype(float), threshold=val_thr
+        )
         history_rows.append(
             {
                 "epoch": epoch,
@@ -524,7 +548,9 @@ def main() -> None:
 
     y_val, val_prob = predict_probs(model, val_loader, device, use_amp=use_amp)
     final_thr = best_f1_threshold(y_val.astype(int), val_prob.astype(float))
-    val_metrics = compute_binary_metrics(y_val.astype(int), val_prob.astype(float), threshold=final_thr)
+    val_metrics = compute_binary_metrics(
+        y_val.astype(int), val_prob.astype(float), threshold=final_thr
+    )
     print(
         f"VAL (best ckpt, tuned thr): thr={final_thr:.3f} ROC-AUC={val_metrics['roc_auc']:.4f} "
         f"PR-AUC={val_metrics['pr_auc']:.4f} P={val_metrics['precision']:.4f} "
@@ -533,8 +559,12 @@ def main() -> None:
 
     if test_loader is not None:
         y_test, test_prob = predict_probs(model, test_loader, device, use_amp=use_amp)
-        test_metrics_tuned = compute_binary_metrics(y_test.astype(int), test_prob.astype(float), threshold=final_thr)
-        test_metrics_default = compute_binary_metrics(y_test.astype(int), test_prob.astype(float), threshold=0.5)
+        test_metrics_tuned = compute_binary_metrics(
+            y_test.astype(int), test_prob.astype(float), threshold=final_thr
+        )
+        test_metrics_default = compute_binary_metrics(
+            y_test.astype(int), test_prob.astype(float), threshold=0.5
+        )
         print(
             f"TEST (val-tuned thr): thr={final_thr:.3f} ROC-AUC={test_metrics_tuned['roc_auc']:.4f} "
             f"PR-AUC={test_metrics_tuned['pr_auc']:.4f} P={test_metrics_tuned['precision']:.4f} "

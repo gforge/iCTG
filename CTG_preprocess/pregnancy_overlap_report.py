@@ -201,12 +201,18 @@ def _print_summary(con: duckdb.DuckDBPyConnection, cutoff_date: str) -> None:
             f"ctg_pregnancy_episodes_from_{cutoff_date}",
             f"SELECT COUNT(*) FROM ctg_pregnancies WHERE ctg_date >= DATE '{cutoff_date}'",
         ),
-        ("registry_birth_rows_with_ctg_match", "SELECT COUNT(DISTINCT reg_row) FROM match_candidates"),
+        (
+            "registry_birth_rows_with_ctg_match",
+            "SELECT COUNT(DISTINCT reg_row) FROM match_candidates",
+        ),
         (
             "registry_pregnancy_episodes_with_ctg_match",
             "SELECT COUNT(*) FROM (SELECT DISTINCT PatientID, birth_day FROM pregnancy_match_candidates)",
         ),
-        ("ctg_pregnancy_episodes_with_registry_match", "SELECT COUNT(DISTINCT ctg_episode_id) FROM match_candidates"),
+        (
+            "ctg_pregnancy_episodes_with_registry_match",
+            "SELECT COUNT(DISTINCT ctg_episode_id) FROM match_candidates",
+        ),
         (
             "ctg_pregnancy_episodes_without_registry_match",
             """
@@ -309,12 +315,16 @@ def _print_year_tables(con: duckdb.DuckDBPyConnection, cutoff_date: str) -> None
         print(f"{year},{total},{matched},{unmatched},{pct:.2f}")
 
     print(f"\nFrom {cutoff_date} onward")
-    reg_total = _scalar(con, f"SELECT COUNT(*) FROM registry_births WHERE birth_day >= DATE '{cutoff_date}'")
+    reg_total = _scalar(
+        con, f"SELECT COUNT(*) FROM registry_births WHERE birth_day >= DATE '{cutoff_date}'"
+    )
     reg_matched = _scalar(
         con,
         f"SELECT COUNT(DISTINCT reg_row) FROM match_candidates WHERE birth_day >= DATE '{cutoff_date}'",
     )
-    ctg_total = _scalar(con, f"SELECT COUNT(*) FROM ctg_pregnancies WHERE ctg_date >= DATE '{cutoff_date}'")
+    ctg_total = _scalar(
+        con, f"SELECT COUNT(*) FROM ctg_pregnancies WHERE ctg_date >= DATE '{cutoff_date}'"
+    )
     ctg_matched = _scalar(
         con,
         f"""
@@ -336,7 +346,9 @@ def _print_year_tables(con: duckdb.DuckDBPyConnection, cutoff_date: str) -> None
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pregnancy-level overlap between CTG and gravniva.")
+    parser = argparse.ArgumentParser(
+        description="Pregnancy-level overlap between CTG and gravniva."
+    )
     parser.add_argument("--registry-csv", type=str, default=DEFAULT_PATIENT_CSV)
     parser.add_argument("--stage3", type=str, default=DEFAULT_STAGE3_DIR)
     parser.add_argument("--raw", type=str, default=DEFAULT_STAGE0_DIR)

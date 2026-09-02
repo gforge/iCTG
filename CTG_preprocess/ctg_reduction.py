@@ -13,30 +13,26 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from config import (
-    DEFAULT_PARTITION_COLUMNS,
+    DEFAULT_BABYID_SALT,
     DEFAULT_PARTITION_OUTPUT_DIR,
     DEFAULT_PARTITION_REPORT_EVERY,
-    DEFAULT_REDUCTION_ROOT,
     DEFAULT_STAGE0_DIR,
     DEFAULT_STAGE1_CUTOFF_DATE,
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
     DEFAULT_STAGE2_EXTRA_COLUMNS,
-    DEFAULT_STAGE3_DIR,
-    DEFAULT_STAGE3_OUTPUT_FILE,
-    DEFAULT_STAGE3_GAP_MINUTES,
-    DEFAULT_STAGE3_PREG_GAP_DAYS,
-    DEFAULT_STAGE3_LAST_HOUR_MINUTES,
-    DEFAULT_BABYID_SALT,
     DEFAULT_STAGE3_BUCKETS,
+    DEFAULT_STAGE3_DIR,
+    DEFAULT_STAGE3_GAP_MINUTES,
+    DEFAULT_STAGE3_LAST_HOUR_MINUTES,
+    DEFAULT_STAGE3_OUTPUT_FILE,
+    DEFAULT_STAGE3_PREG_GAP_DAYS,
     DEFAULT_STAGE4_DIR,
-    DEFAULT_STAGE4_OUTPUT_FILE,
     DEFAULT_STAGE4_DUP_THRESHOLD,
-    DEFAULT_STAGE5_DIR,
-    DEFAULT_STAGE5_OUTPUT_FILE,
+    DEFAULT_STAGE4_OUTPUT_FILE,
     DEFAULT_STAGE5_5_OUTPUT_FILE,
     DEFAULT_STAGE5_MIN_FHR_SECONDS,
-    DEFAULT_STAGE6_DIR,
+    DEFAULT_STAGE5_OUTPUT_FILE,
 )
 
 
@@ -49,7 +45,9 @@ def _field_type_or_default(
     name: str,
     default_type: pa.DataType = pa.string(),
 ) -> pa.DataType:
-    schema = dataset_or_schema.schema if isinstance(dataset_or_schema, ds.Dataset) else dataset_or_schema
+    schema = (
+        dataset_or_schema.schema if isinstance(dataset_or_schema, ds.Dataset) else dataset_or_schema
+    )
     if name in schema.names:
         return schema.field(name).type
     return default_type
@@ -67,7 +65,7 @@ def _resolve_raw_parquet_files(input_dir: str | Path) -> list[str]:
     if not input_dir.exists():
         raise FileNotFoundError(f"Raw input directory not found: {input_dir}")
 
-    parquet_files = sorted(str(path) for path in input_dir.glob('*.parquet') if path.is_file())
+    parquet_files = sorted(str(path) for path in input_dir.glob("*.parquet") if path.is_file())
     if not parquet_files:
         raise FileNotFoundError(f"No parquet files found in raw input directory: {input_dir}")
     return parquet_files
@@ -122,7 +120,9 @@ def _stage2_output_path(output_dir: Path, shard_index: int, shard_count: int) ->
     return output_dir / f"part-{shard_index:04d}-of-{shard_count:04d}.parquet"
 
 
-def _build_stage2_shards(input_paths: list[Path], shard_count: int) -> tuple[list[list[tuple[Path, int, int]]], int]:
+def _build_stage2_shards(
+    input_paths: list[Path], shard_count: int
+) -> tuple[list[list[tuple[Path, int, int]]], int]:
     file_row_groups: list[tuple[Path, int]] = []
     total_row_groups = 0
     for path in input_paths:
@@ -279,7 +279,9 @@ def stage2_columnfilter(
         *extra_columns,
     ]
     registration_type = _field_type_or_default(input_schema, "RegistrationID")
-    extra_column_types = {name: _field_type_or_default(input_schema, name) for name in extra_columns}
+    extra_column_types = {
+        name: _field_type_or_default(input_schema, name) for name in extra_columns
+    }
 
     schema = pa.schema(
         [
@@ -301,10 +303,11 @@ def stage2_columnfilter(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    expected_outputs = {_stage2_output_path(output_dir, idx, shard_count).name for idx in range(shard_count)}
+    expected_outputs = {
+        _stage2_output_path(output_dir, idx, shard_count).name for idx in range(shard_count)
+    }
     extra_outputs = [
-        path for path in output_dir.glob("*.parquet")
-        if path.name not in expected_outputs
+        path for path in output_dir.glob("*.parquet") if path.name not in expected_outputs
     ]
     if extra_outputs:
         sample = ", ".join(path.name for path in extra_outputs[:3])
@@ -339,7 +342,9 @@ def stage2_columnfilter(
         registration_id = _column_or_default(batch, "RegistrationID", registration_type)
         fhr = _compute_fhr(batch)
         toco = _compute_toco(batch)
-        extras = [_column_or_default(batch, name, extra_column_types[name]) for name in extra_columns]
+        extras = [
+            _column_or_default(batch, name, extra_column_types[name]) for name in extra_columns
+        ]
         return pa.RecordBatch.from_arrays(
             [timestamp, patient_id, registration_id, fhr, toco, *extras],
             schema=schema,
@@ -355,7 +360,11 @@ def stage2_columnfilter(
             return buffered_batches, buffered_rows
 
         table = pa.Table.from_batches(buffered_batches, schema=schema)
-        rows_to_write = table.num_rows if force else (table.num_rows // write_row_group_size) * write_row_group_size
+        rows_to_write = (
+            table.num_rows
+            if force
+            else (table.num_rows // write_row_group_size) * write_row_group_size
+        )
         if rows_to_write:
             writer.write_table(table.slice(0, rows_to_write), row_group_size=write_row_group_size)
         remainder = table.slice(rows_to_write)
@@ -400,7 +409,11 @@ def stage2_columnfilter(
                 parquet_file = pq.ParquetFile(input_path)
                 try:
                     for chunk_start in range(row_group_start, row_group_stop, row_group_chunk_size):
-                        row_groups = list(range(chunk_start, min(chunk_start + row_group_chunk_size, row_group_stop)))
+                        row_groups = list(
+                            range(
+                                chunk_start, min(chunk_start + row_group_chunk_size, row_group_stop)
+                            )
+                        )
                         for batch in parquet_file.iter_batches(
                             batch_size=batch_size,
                             row_groups=row_groups,
@@ -635,11 +648,11 @@ FROM final_rows
             indices = [bucket_index] if bucket_index is not None else range(bucket_count)
             for idx in indices:
                 out_path = base_dir / f"{prefix}_bucket_{idx:04d}.parquet"
-                print(f"Stage3 bucket {idx+1}/{bucket_count}: {out_path.name}")
+                print(f"Stage3 bucket {idx + 1}/{bucket_count}: {out_path.name}")
                 if bucket_index is None and prebucket_dir is not None:
                     bucket_path = prebucket_dir / f"patient_bucket={idx}"
                     if not bucket_path.exists():
-                        print(f"Stage3 bucket {idx+1}/{bucket_count}: no input rows, skipping")
+                        print(f"Stage3 bucket {idx + 1}/{bucket_count}: no input rows, skipping")
                         continue
                     con.execute(
                         "CREATE OR REPLACE VIEW ctg AS SELECT * FROM "
@@ -893,12 +906,16 @@ def stage6_partitioning(
     if has_ctg_date:
         schema = pa.schema(base_fields)
     else:
-        schema = pa.schema(base_fields + [
-            pa.field("ctg_date", pa.date32()),
-        ])
+        schema = pa.schema(
+            base_fields
+            + [
+                pa.field("ctg_date", pa.date32()),
+            ]
+        )
 
     def batch_iter():
         import time
+
         start_time = time.perf_counter()
         batches = 0
         rows = 0
@@ -994,13 +1011,21 @@ def stage5_5_sort(
         con.close()
 
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="CTG reduction stages.")
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["stage1", "stage2", "stage3", "stage4", "stage5", "stage5_5", "stage6", "partition"],
+        choices=[
+            "stage1",
+            "stage2",
+            "stage3",
+            "stage4",
+            "stage5",
+            "stage5_5",
+            "stage6",
+            "partition",
+        ],
         required=True,
         help="Which stage to run.",
     )

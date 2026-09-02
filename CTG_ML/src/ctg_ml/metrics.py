@@ -11,7 +11,9 @@ from sklearn.metrics import (
 )
 
 
-def compute_binary_metrics(y_true: np.ndarray, prob: np.ndarray, threshold: float) -> dict[str, float]:
+def compute_binary_metrics(
+    y_true: np.ndarray, prob: np.ndarray, threshold: float
+) -> dict[str, float]:
     pred = (prob >= threshold).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_true, pred, labels=[0, 1]).ravel()
     return {

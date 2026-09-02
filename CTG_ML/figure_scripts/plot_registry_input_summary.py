@@ -101,9 +101,7 @@ def build_summary(config_path: str, registry_csv: str | None) -> tuple[pd.DataFr
     missing_summary = pd.DataFrame(missing_rows).sort_values(
         ["missing_fraction", "label"], ascending=[False, True]
     )
-    boolean_summary = pd.DataFrame(boolean_rows).sort_values(
-        "true_fraction_all", ascending=False
-    )
+    boolean_summary = pd.DataFrame(boolean_rows).sort_values("true_fraction_all", ascending=False)
     return missing_summary, boolean_summary
 
 

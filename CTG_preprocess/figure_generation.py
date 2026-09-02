@@ -564,8 +564,7 @@ def create_retention_summary(output_dir: Path, formats: list[str], dpi: int) -> 
     sizes = [stage.size_mb or 0 for stage in stages]
     raw_cohort_count = cohort_counts[0] if cohort_counts else 0
     cumulative_pct = [
-        (value / raw_cohort_count * 100.0) if raw_cohort_count else 0.0
-        for value in cohort_counts
+        (value / raw_cohort_count * 100.0) if raw_cohort_count else 0.0 for value in cohort_counts
     ]
 
     fig, axes = plt.subplots(
@@ -577,7 +576,9 @@ def create_retention_summary(output_dir: Path, formats: list[str], dpi: int) -> 
 
     bar_colors = [PALETTE[stage.group]["edge"] for stage in stages]
     axes[0].bar(labels, cohort_counts, color=bar_colors, alpha=0.82)
-    axes[0].set_title("Cumulative pregnancy/BabyID retention by preprocessing stage", loc="left", weight="bold")
+    axes[0].set_title(
+        "Cumulative pregnancy/BabyID retention by preprocessing stage", loc="left", weight="bold"
+    )
     axes[0].set_ylabel("Pregnancies or babies")
     axes[0].grid(axis="y", color="#e5e7eb", linewidth=0.8)
     axes[0].set_axisbelow(True)
@@ -609,7 +610,14 @@ def create_retention_summary(output_dir: Path, formats: list[str], dpi: int) -> 
     lines = ax_rows.get_lines() + ax_size.get_lines()
     ax_rows.legend(lines, [line.get_label() for line in lines], loc="upper right", frameon=False)
 
-    fig.suptitle("CTG preprocessing reduction summary", x=0.075, ha="left", y=0.985, weight="bold", fontsize=14)
+    fig.suptitle(
+        "CTG preprocessing reduction summary",
+        x=0.075,
+        ha="left",
+        y=0.985,
+        weight="bold",
+        fontsize=14,
+    )
     fig.text(
         0.075,
         0.018,
@@ -938,9 +946,18 @@ def create_schema_evolution(output_dir: Path, formats: list[str], dpi: int) -> l
         x = legend_x + idx * 1.42
         cell_style = style[kind]
         ax.add_patch(
-            Rectangle((x, legend_y), 0.18, 0.18, facecolor=cell_style["fill"], edgecolor=cell_style["edge"], linewidth=0.5)
+            Rectangle(
+                (x, legend_y),
+                0.18,
+                0.18,
+                facecolor=cell_style["fill"],
+                edgecolor=cell_style["edge"],
+                linewidth=0.5,
+            )
         )
-        ax.text(x + 0.24, legend_y + 0.09, label, ha="left", va="center", fontsize=6.2, color="#374151")
+        ax.text(
+            x + 0.24, legend_y + 0.09, label, ha="left", va="center", fontsize=6.2, color="#374151"
+        )
 
     ax.text(
         0.55,

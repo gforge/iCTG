@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class HrBlock(BaseModel):
-    Values: List[int] = Field(default_factory=list)
-    SignalQuality: Optional[str] = None  # only present for Hr1/Hr2
+    Values: list[int] = Field(default_factory=list)
+    SignalQuality: str | None = None  # only present for Hr1/Hr2
 
 
 class TocoBlock(BaseModel):
@@ -18,14 +18,14 @@ class PatientRecord(BaseModel):
     PatientID: str
     RegistrationID: int
     Timestamp: datetime
-    Hr1Mode: Optional[str] = None
-    Hr2Mode: Optional[str] = None
-    MhrMode: Optional[str] = None
-    TocoMode: Optional[str] = None
-    Hr1: Optional[HrBlock] = None
-    Hr2: Optional[HrBlock] = None
-    Mhr: Optional[HrBlock] = None
-    Toco: Optional[TocoBlock] = None
+    Hr1Mode: str | None = None
+    Hr2Mode: str | None = None
+    MhrMode: str | None = None
+    TocoMode: str | None = None
+    Hr1: HrBlock | None = None
+    Hr2: HrBlock | None = None
+    Mhr: HrBlock | None = None
+    Toco: TocoBlock | None = None
 
     @field_validator("Timestamp", mode="before")
     @classmethod
@@ -39,7 +39,7 @@ class PatientRecord(BaseModel):
 
 
 # ---------- normalization / flattening ----------
-def normalize_patient_record(rec: PatientRecord) -> Dict[str, Any]:
+def normalize_patient_record(rec: PatientRecord) -> dict[str, Any]:
     """
     Convert a validated PatientRecord into a flat dict suitable for DataFrame rows.
     - Timestamp is already a datetime object from Pydantic validation
@@ -47,7 +47,7 @@ def normalize_patient_record(rec: PatientRecord) -> Dict[str, Any]:
     - Keep Toco.Values as base64 string (optionally decode elsewhere).
     """
 
-    def values_cols(block: Optional[HrBlock], prefix: str) -> Dict[str, Any]:
+    def values_cols(block: HrBlock | None, prefix: str) -> dict[str, Any]:
         vals = block.Values if block else []
         # Expand first 4 positions; adjust if your data may vary in length
         cols: dict[str, int | str | None] = {
@@ -59,7 +59,7 @@ def normalize_patient_record(rec: PatientRecord) -> Dict[str, Any]:
             cols[f"{prefix}_SignalQuality"] = None
         return cols
 
-    row: Dict[str, Any] = {
+    row: dict[str, Any] = {
         "PatientID": rec.PatientID,
         "RegistrationID": rec.RegistrationID,
         "Timestamp": rec.Timestamp,  # already a datetime object

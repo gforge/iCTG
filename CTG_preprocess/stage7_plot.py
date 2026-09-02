@@ -66,7 +66,10 @@ def _load_apgar(con: duckdb.DuckDBPyConnection, registry_path: Path, baby_id: st
 
 def _ctg_columns(con: duckdb.DuckDBPyConnection, ctg_path: Path) -> set[str]:
     safe_ctg = _safe(ctg_path)
-    return {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{safe_ctg}')").fetchall()}
+    return {
+        row[0]
+        for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{safe_ctg}')").fetchall()
+    }
 
 
 def _load_ctg(con: duckdb.DuckDBPyConnection, ctg_path: Path, baby_id: str):
@@ -122,7 +125,9 @@ def _prepare_window(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Timestamp, pd.Ti
     return df_window, start, anchor
 
 
-def _quality_intervals(df_window: pd.DataFrame, qualities: set[str]) -> list[tuple[float, float, str]]:
+def _quality_intervals(
+    df_window: pd.DataFrame, qualities: set[str]
+) -> list[tuple[float, float, str]]:
     if "signal_quality" not in df_window.columns or df_window["signal_quality"].isna().all():
         return []
 
@@ -173,7 +178,11 @@ def _add_quality_bands(axes: list[plt.Axes], df_window: pd.DataFrame, mode: str)
         seen.add(quality)
 
     return [
-        Patch(facecolor=colors[quality]["color"], alpha=colors[quality]["alpha"], label=colors[quality]["label"])
+        Patch(
+            facecolor=colors[quality]["color"],
+            alpha=colors[quality]["alpha"],
+            label=colors[quality]["label"],
+        )
         for quality in ("R", "Y")
         if quality in seen
     ]
@@ -276,12 +285,16 @@ def _indexed_output_path(base_path: Path, index: int, total: int, apgar: str) ->
 
     apgar_label = "".join(ch if ch.isalnum() else "_" for ch in str(apgar)) or "unknown"
     if base_path.suffix:
-        return base_path.with_name(f"{base_path.stem}_{index:02d}_apgar{apgar_label}{base_path.suffix}")
+        return base_path.with_name(
+            f"{base_path.stem}_{index:02d}_apgar{apgar_label}{base_path.suffix}"
+        )
     return base_path / f"ctg_trace_{index:02d}_apgar{apgar_label}.png"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot an anonymized Stage 7 CTG trace with optional signal-quality bands.")
+    parser = argparse.ArgumentParser(
+        description="Plot an anonymized Stage 7 CTG trace with optional signal-quality bands."
+    )
     parser.add_argument("--ctg", type=str, default=DEFAULT_STAGE7_CTG_PARQUET)
     parser.add_argument("--registry", type=str, default=DEFAULT_STAGE7_REGISTRY_CSV)
     parser.add_argument("--baby-id", type=str, default=None)
@@ -308,7 +321,9 @@ def main() -> None:
         default="Final-hour CTG segment",
         help="Figure title. BabyID is never included in the figure by default.",
     )
-    parser.add_argument("--hide-apgar", action="store_true", help="Do not include Apgar in the figure title.")
+    parser.add_argument(
+        "--hide-apgar", action="store_true", help="Do not include Apgar in the figure title."
+    )
     args = parser.parse_args()
 
     ctg_path = Path(args.ctg)

@@ -4,12 +4,9 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
-def setup_logging(
-    log_dir: Optional[Path] = None, level: int = logging.INFO
-) -> logging.Logger:
+def setup_logging(log_dir: Path | None = None, level: int = logging.INFO) -> logging.Logger:
     """
     Configure logging for the conversion process.
 

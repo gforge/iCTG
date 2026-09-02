@@ -13,7 +13,6 @@ import pandas as pd
 
 from ctg_ml.ctg2_config import load_ctg2_config
 
-
 APGAR_OUTCOMES = ["apgar1_below7", "apgar5_below7", "apgar10_below7"]
 BINARY_OUTCOMES = [
     "ph_navel_below7",
@@ -120,8 +119,14 @@ def _default_group_specs(cfg) -> list[AblationSpec]:
             ],
         ),
     ]
-    single = [AblationSpec("baseline", "baseline", []), AblationSpec("CTG", "sequence", []), AblationSpec("all_registry", "tabular_all", [])]
-    all_raw = cfg.registry.input_numeric + cfg.registry.input_boolean + cfg.registry.input_categorical
+    single = [
+        AblationSpec("baseline", "baseline", []),
+        AblationSpec("CTG", "sequence", []),
+        AblationSpec("all_registry", "tabular_all", []),
+    ]
+    all_raw = (
+        cfg.registry.input_numeric + cfg.registry.input_boolean + cfg.registry.input_categorical
+    )
     for col in all_raw:
         single.append(AblationSpec(col, "tabular_group", [col]))
     return grouped, single
@@ -138,7 +143,9 @@ def _dedupe_specs(specs: list[AblationSpec]) -> list[AblationSpec]:
     return out
 
 
-def _filter_specs(specs: list[AblationSpec], requested_names: list[str] | None) -> list[AblationSpec]:
+def _filter_specs(
+    specs: list[AblationSpec], requested_names: list[str] | None
+) -> list[AblationSpec]:
     if not requested_names:
         return specs
     requested = {name.strip() for name in requested_names if name.strip()}
@@ -159,14 +166,37 @@ def _extract_test_metric(payload: dict, metric_name: str) -> dict[str, float]:
         result[name] = val
         if math.isfinite(val):
             apgar_vals.append(val)
-    result["apgar_mean_below7"] = float(sum(apgar_vals) / len(apgar_vals)) if apgar_vals else float("nan")
+    result["apgar_mean_below7"] = (
+        float(sum(apgar_vals) / len(apgar_vals)) if apgar_vals else float("nan")
+    )
     for name in BINARY_OUTCOMES:
         result[name] = float(test["binary"].get(name, {}).get(metric_name, float("nan")))
     return result
 
 
-def _build_command(train_script: Path, config: str, device: str, seed: int, spec: AblationSpec, metrics_out: Path, show_inner_progress: bool) -> list[str]:
-    cmd = [sys.executable, str(train_script), "--config", config, "--device", device, "--seed-override", str(seed), "--metrics-out", str(metrics_out), "--run-name", f"ablation_{_sanitize(spec.name)}_seed{seed}"]
+def _build_command(
+    train_script: Path,
+    config: str,
+    device: str,
+    seed: int,
+    spec: AblationSpec,
+    metrics_out: Path,
+    show_inner_progress: bool,
+) -> list[str]:
+    cmd = [
+        sys.executable,
+        str(train_script),
+        "--config",
+        config,
+        "--device",
+        device,
+        "--seed-override",
+        str(seed),
+        "--metrics-out",
+        str(metrics_out),
+        "--run-name",
+        f"ablation_{_sanitize(spec.name)}_seed{seed}",
+    ]
     if not show_inner_progress:
         cmd.append("--no-progress")
     if spec.kind == "sequence":
@@ -186,7 +216,9 @@ def _fmt_value(mean: float, sd: float, decimals: int = 3) -> str:
     return f"{mean:.{decimals}f} ± {sd:.{decimals}f}"
 
 
-def _build_readable_markdown(config_path: str, seeds: list[int], mode: str, summary_df: pd.DataFrame) -> str:
+def _build_readable_markdown(
+    config_path: str, seeds: list[int], mode: str, summary_df: pd.DataFrame
+) -> str:
     non_baseline = summary_df[summary_df["ablation"] != "baseline"].copy()
     lines = [
         "# CTG2 Ablation Study",
@@ -231,8 +263,12 @@ def _build_readable_markdown(config_path: str, seeds: list[int], mode: str, summ
         lines.append("")
 
     lines.extend(["## Notes", ""])
-    lines.append("- Negative values mean the ablated run did slightly better than the baseline on that metric.")
-    lines.append("- With one seed, all standard deviations are 0 and small negative values are often just training noise.")
+    lines.append(
+        "- Negative values mean the ablated run did slightly better than the baseline on that metric."
+    )
+    lines.append(
+        "- With one seed, all standard deviations are 0 and small negative values are often just training noise."
+    )
     return "\n".join(lines)
 
 
@@ -266,7 +302,11 @@ def run_study(
     raw_rows: list[dict] = []
 
     definitions_path = output_dir / "group_definitions.json"
-    definitions_path.write_text(json.dumps({spec.name: {"kind": spec.kind, "columns": spec.columns} for spec in specs}, indent=2))
+    definitions_path.write_text(
+        json.dumps(
+            {spec.name: {"kind": spec.kind, "columns": spec.columns} for spec in specs}, indent=2
+        )
+    )
 
     for seed, spec in tasks:
         metrics_out = output_dir / "run_metrics" / f"{_sanitize(spec.name)}__seed{seed}.json"
@@ -282,7 +322,9 @@ def run_study(
                 avg = sum(durations) / len(durations)
                 eta = _format_duration(avg * (total_runs - completed))
             print(f"{prefix} -> starting (ETA {eta})")
-            cmd = _build_command(train_script, config_path, device, seed, spec, metrics_out, show_inner_progress)
+            cmd = _build_command(
+                train_script, config_path, device, seed, spec, metrics_out, show_inner_progress
+            )
             subprocess.run(cmd, check=True)
         payload = json.loads(metrics_out.read_text())
         roc_aucs = _extract_test_metric(payload, "roc_auc")
@@ -302,7 +344,9 @@ def run_study(
         row.update({f"{k}_pr_auc": v for k, v in pr_aucs.items()})
         raw_rows.append(row)
         avg = sum(durations) / len(durations)
-        remaining = _format_duration(avg * (total_runs - completed)) if completed < total_runs else "0s"
+        remaining = (
+            _format_duration(avg * (total_runs - completed)) if completed < total_runs else "0s"
+        )
         print(f"{prefix} -> done in {_format_duration(elapsed)} (remaining ~{remaining})")
 
     raw_df = pd.DataFrame(raw_rows)
@@ -327,7 +371,9 @@ def run_study(
                 out[f"{outcome}_{metric}_baseline"] = base_val
                 out[f"{outcome}_{metric}_ablated"] = cur_val
                 out[f"{outcome}_{metric}_drop"] = (
-                    base_val - cur_val if math.isfinite(base_val) and math.isfinite(cur_val) else float("nan")
+                    base_val - cur_val
+                    if math.isfinite(base_val) and math.isfinite(cur_val)
+                    else float("nan")
                 )
         delta_rows.append(out)
     delta_df = pd.DataFrame(delta_rows)
@@ -336,13 +382,21 @@ def run_study(
 
     summary_records = []
     for ablation, part in delta_df.groupby("ablation", sort=False):
-        record = {"ablation": ablation, "kind": part["kind"].iloc[0], "columns": part["columns"].iloc[0]}
+        record = {
+            "ablation": ablation,
+            "kind": part["kind"].iloc[0],
+            "columns": part["columns"].iloc[0],
+        }
         for outcome in SUMMARY_OUTCOMES:
             for metric in ["roc_auc", "pr_auc"]:
                 vals = pd.to_numeric(part[f"{outcome}_{metric}_drop"], errors="coerce").dropna()
-                record[f"{outcome}_mean_drop_{metric}"] = float(vals.mean()) if not vals.empty else float("nan")
+                record[f"{outcome}_mean_drop_{metric}"] = (
+                    float(vals.mean()) if not vals.empty else float("nan")
+                )
                 record[f"{outcome}_sd_drop_{metric}"] = (
-                    float(vals.std(ddof=1)) if len(vals) > 1 else (0.0 if len(vals) == 1 else float("nan"))
+                    float(vals.std(ddof=1))
+                    if len(vals) > 1
+                    else (0.0 if len(vals) == 1 else float("nan"))
                 )
         summary_records.append(record)
     summary_df = pd.DataFrame(summary_records)
@@ -362,6 +416,7 @@ def run_study(
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for _, row in summary_df.iterrows():
+
         def fmt(outcome: str, metric: str) -> str:
             mean = row[f"{outcome}_mean_drop_{metric}"]
             sd = row[f"{outcome}_sd_drop_{metric}"]
@@ -401,26 +456,57 @@ def run_study(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run automated grouped/single ablation study for CTG2 multimodal training.")
+    parser = argparse.ArgumentParser(
+        description="Run automated grouped/single ablation study for CTG2 multimodal training."
+    )
     parser.add_argument("--config", default="configs/ctg2_multimodal.toml")
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--seeds", default=None, help="Comma-separated seeds. Defaults to the training seed from config.")
+    parser.add_argument(
+        "--seeds",
+        default=None,
+        help="Comma-separated seeds. Defaults to the training seed from config.",
+    )
     parser.add_argument("--mode", choices=["grouped", "single", "both"], default="grouped")
     parser.add_argument(
         "--only-ablations",
         default=None,
         help="Comma-separated ablation names to run. baseline is added automatically.",
     )
-    parser.add_argument("--output-dir", default=None, help="Directory for study outputs. Defaults to <artifacts_dir>/ablation_study/<mode>")
-    parser.add_argument("--force", action="store_true", help="Rerun even if per-run metrics JSON already exists.")
-    parser.add_argument("--show-inner-progress", action="store_true", help="Show the full batch progress bars from each underlying training run.")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory for study outputs. Defaults to <artifacts_dir>/ablation_study/<mode>",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Rerun even if per-run metrics JSON already exists."
+    )
+    parser.add_argument(
+        "--show-inner-progress",
+        action="store_true",
+        help="Show the full batch progress bars from each underlying training run.",
+    )
     args = parser.parse_args()
 
     cfg = load_ctg2_config(args.config)
     seeds = [int(x.strip()) for x in args.seeds.split(",")] if args.seeds else [int(cfg.train.seed)]
-    only_ablations = [x.strip() for x in args.only_ablations.split(",")] if args.only_ablations else None
-    output_dir = Path(args.output_dir) if args.output_dir else (cfg.paths.artifacts_dir / "ablation_study" / args.mode)
-    run_study(args.config, args.device, seeds, args.mode, output_dir, args.force, args.show_inner_progress, only_ablations)
+    only_ablations = (
+        [x.strip() for x in args.only_ablations.split(",")] if args.only_ablations else None
+    )
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else (cfg.paths.artifacts_dir / "ablation_study" / args.mode)
+    )
+    run_study(
+        args.config,
+        args.device,
+        seeds,
+        args.mode,
+        output_dir,
+        args.force,
+        args.show_inner_progress,
+        only_ablations,
+    )
 
 
 if __name__ == "__main__":

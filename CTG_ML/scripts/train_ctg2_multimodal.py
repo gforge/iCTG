@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import random
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -136,7 +136,9 @@ def ablate_tabular_columns_inplace(
 ) -> list[int]:
     indices = resolve_tabular_feature_indices(feature_names, raw_columns)
     if not indices:
-        raise ValueError(f"None of the requested ablation columns matched encoded features: {raw_columns}")
+        raise ValueError(
+            f"None of the requested ablation columns matched encoded features: {raw_columns}"
+        )
     for ds in datasets:
         ds.X_tab[:, indices] = train_feature_mean[indices]
     return indices
@@ -261,7 +263,18 @@ def evaluate_dataset(
     bin_mask: list[np.ndarray] = []
 
     for batch in loader:
-        x_seq, x_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
+        (
+            x_seq,
+            x_tab,
+            y_apgar,
+            y_apgar_mask,
+            y_cat,
+            y_cat_mask,
+            y_reg,
+            y_reg_mask,
+            y_bin,
+            y_bin_mask,
+        ) = batch
         x_seq = x_seq.to(device, non_blocking=(device.type == "cuda"))
         x_tab = x_tab.to(device, non_blocking=(device.type == "cuda"))
         y_apgar = y_apgar.to(device, non_blocking=(device.type == "cuda"))
@@ -314,8 +327,16 @@ def evaluate_dataset(
     apgar_logits_arr = np.concatenate(apgar_logits_all, axis=0)
     apgar_true_arr = np.concatenate(apgar_true_all, axis=0)
     apgar_mask_arr = np.concatenate(apgar_mask_all, axis=0)
-    cat_true_arr = np.concatenate(cat_true_all, axis=0) if cat_true_all else np.zeros((len(apgar_true_arr), 0), dtype=np.int64)
-    cat_mask_arr = np.concatenate(cat_mask_all, axis=0) if cat_mask_all else np.zeros((len(apgar_true_arr), 0), dtype=np.float32)
+    cat_true_arr = (
+        np.concatenate(cat_true_all, axis=0)
+        if cat_true_all
+        else np.zeros((len(apgar_true_arr), 0), dtype=np.int64)
+    )
+    cat_mask_arr = (
+        np.concatenate(cat_mask_all, axis=0)
+        if cat_mask_all
+        else np.zeros((len(apgar_true_arr), 0), dtype=np.float32)
+    )
     reg_pred_arr = np.concatenate(reg_preds, axis=0)
     reg_true_arr = np.concatenate(reg_true, axis=0)
     reg_mask_arr = np.concatenate(reg_mask, axis=0)
@@ -369,7 +390,9 @@ def evaluate_dataset(
             continue
         logits_arr = np.concatenate(cat_logits_all[idx], axis=0)
         pred = logits_arr.argmax(axis=1)
-        categorical_metrics[name] = {"accuracy": float((pred[valid] == cat_true_arr[valid, idx]).mean())}
+        categorical_metrics[name] = {
+            "accuracy": float((pred[valid] == cat_true_arr[valid, idx]).mean())
+        }
 
     reg_metrics: dict[str, dict[str, float]] = {}
     for idx, name in enumerate(regression_names):
@@ -387,7 +410,11 @@ def evaluate_dataset(
     for idx, name in enumerate(binary_names):
         valid = bin_mask_arr[:, idx] > 0
         if valid.sum() == 0:
-            bin_metrics[name] = {"roc_auc": float("nan"), "pr_auc": float("nan"), "prevalence": float("nan")}
+            bin_metrics[name] = {
+                "roc_auc": float("nan"),
+                "pr_auc": float("nan"),
+                "prevalence": float("nan"),
+            }
             continue
         y_true = bin_true_arr[valid, idx].astype(int)
         prob = bin_prob_arr[valid, idx].astype(float)
@@ -453,7 +480,9 @@ def format_eval(tag: str, metrics: dict[str, object]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a multimodal multitask TCN on CTG2 NPZ files.")
+    parser = argparse.ArgumentParser(
+        description="Train a multimodal multitask TCN on CTG2 NPZ files."
+    )
     parser.add_argument("--config", default="configs/ctg2_multimodal.toml")
     parser.add_argument("--train-npz", default=None)
     parser.add_argument("--val-npz", default=None)
@@ -475,9 +504,20 @@ def main() -> None:
         default=None,
         help="Comma-separated raw registry input columns to ablate by replacing their encoded features with the train-set mean values.",
     )
-    parser.add_argument("--seed-override", type=int, default=None, help="Override training seed for repeated ablation runs.")
-    parser.add_argument("--run-name", default=None, help="Optional suffix used for checkpoint/history/metrics filenames.")
-    parser.add_argument("--metrics-out", default=None, help="Optional JSON path for final VAL/TEST metrics.")
+    parser.add_argument(
+        "--seed-override",
+        type=int,
+        default=None,
+        help="Override training seed for repeated ablation runs.",
+    )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="Optional suffix used for checkpoint/history/metrics filenames.",
+    )
+    parser.add_argument(
+        "--metrics-out", default=None, help="Optional JSON path for final VAL/TEST metrics."
+    )
     args = parser.parse_args()
 
     cfg = load_ctg2_config(args.config)
@@ -506,7 +546,9 @@ def main() -> None:
         ablate_columns = [x.strip() for x in args.ablate_tabular_columns.split(",") if x.strip()]
 
     if sum(bool(x) for x in [args.ablate_sequence, args.ablate_tabular, bool(ablate_columns)]) > 1:
-        raise ValueError("Use at most one of --ablate-sequence, --ablate-tabular, or --ablate-tabular-columns.")
+        raise ValueError(
+            "Use at most one of --ablate-sequence, --ablate-tabular, or --ablate-tabular-columns."
+        )
 
     modality_mode = "multimodal"
     ablated_feature_indices: list[int] = []
@@ -556,9 +598,15 @@ def main() -> None:
     print(f"Training seed: {train_seed} (deterministic={cfg.train.deterministic})")
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
-    train_loader = DataLoader(train_ds, batch_size=cfg.train.batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda)
-    val_loader = DataLoader(val_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda)
-    test_loader = DataLoader(test_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda)
+    train_loader = DataLoader(
+        train_ds, batch_size=cfg.train.batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda
+    )
 
     model = MultimodalMultitaskTCN(
         sequence_in_channels=train_ds.X_seq.shape[1],
@@ -585,13 +633,21 @@ def main() -> None:
         pos_weight_values.append(negatives / max(positives, 1.0))
     pos_weight = torch.tensor(pos_weight_values, dtype=torch.float32, device=device)
     apgar_class_weights = torch.tensor(
-        compute_apgar_class_weights(train_ds.y_apgar, train_ds.y_apgar_mask, cfg.train.apgar_class_weight_power),
+        compute_apgar_class_weights(
+            train_ds.y_apgar, train_ds.y_apgar_mask, cfg.train.apgar_class_weight_power
+        ),
         dtype=torch.float32,
         device=device,
     )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
-    scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp) if hasattr(torch, "amp") else torch.cuda.amp.GradScaler(enabled=use_amp)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay
+    )
+    scaler = (
+        torch.amp.GradScaler(device="cuda", enabled=use_amp)
+        if hasattr(torch, "amp")
+        else torch.cuda.amp.GradScaler(enabled=use_amp)
+    )
 
     ckpt_dir = cfg.paths.artifacts_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -623,9 +679,24 @@ def main() -> None:
         model.train()
         running = 0.0
         n = 0
-        iterator = tqdm(train_loader, desc="train", leave=False, unit="batch") if show_progress else train_loader
+        iterator = (
+            tqdm(train_loader, desc="train", leave=False, unit="batch")
+            if show_progress
+            else train_loader
+        )
         for batch in iterator:
-            x_seq, x_tab, y_apgar, y_apgar_mask, y_cat, y_cat_mask, y_reg, y_reg_mask, y_bin, y_bin_mask = batch
+            (
+                x_seq,
+                x_tab,
+                y_apgar,
+                y_apgar_mask,
+                y_cat,
+                y_cat_mask,
+                y_reg,
+                y_reg_mask,
+                y_bin,
+                y_bin_mask,
+            ) = batch
             x_seq = x_seq.to(device, non_blocking=use_cuda)
             x_tab = x_tab.to(device, non_blocking=use_cuda)
             y_apgar = y_apgar.to(device, non_blocking=use_cuda)
@@ -638,7 +709,9 @@ def main() -> None:
             y_bin_mask = y_bin_mask.to(device, non_blocking=use_cuda)
 
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, enabled=(use_amp and device.type == "cuda")):
+            with torch.autocast(
+                device_type=device.type, enabled=(use_amp and device.type == "cuda")
+            ):
                 apgar_logits, categorical_logits, pred_reg, logits_bin = model(x_seq, x_tab)
                 loss, apgar_loss, reg_loss, bin_loss = masked_multitask_loss(
                     apgar_logits,
@@ -663,13 +736,17 @@ def main() -> None:
                 scaler.scale(loss).backward()
                 if cfg.train.gradient_clip_norm > 0:
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.train.gradient_clip_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), max_norm=cfg.train.gradient_clip_norm
+                    )
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 loss.backward()
                 if cfg.train.gradient_clip_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.train.gradient_clip_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), max_norm=cfg.train.gradient_clip_norm
+                    )
                 optimizer.step()
 
             bs = x_seq.size(0)
@@ -722,7 +799,9 @@ def main() -> None:
         if monitor > (best_monitor_for_stop + cfg.train.early_stopping_min_delta):
             best_monitor_for_stop = monitor
             epochs_since_improve = 0
-            print(f"Early stopping monitor: significant monitor_binary_PR-AUC improvement (best={best_monitor_for_stop:.4f})")
+            print(
+                f"Early stopping monitor: significant monitor_binary_PR-AUC improvement (best={best_monitor_for_stop:.4f})"
+            )
         else:
             epochs_since_improve += 1
             if cfg.train.early_stopping_enabled:

@@ -14,8 +14,12 @@ def main() -> None:
     parser.add_argument("--config", default="configs/default.toml")
     parser.add_argument("--splits", default=None, help="Path to artifacts/splits.csv")
     parser.add_argument("--output-dir", default=None, help="Override sequence output dir")
-    parser.add_argument("--window-minutes", type=int, default=None, help="Override sequence window length")
-    parser.add_argument("--pad-short", action="store_true", help="Left-pad short sequences instead of dropping")
+    parser.add_argument(
+        "--window-minutes", type=int, default=None, help="Override sequence window length"
+    )
+    parser.add_argument(
+        "--pad-short", action="store_true", help="Left-pad short sequences instead of dropping"
+    )
     parser.add_argument(
         "--signals-only",
         action="store_true",
@@ -26,7 +30,9 @@ def main() -> None:
     cfg = load_config(args.config)
     splits_path = Path(args.splits) if args.splits else cfg.paths.artifacts_dir / "splits.csv"
     output_dir = Path(args.output_dir) if args.output_dir else cfg.sequence.output_dir
-    window_minutes = args.window_minutes if args.window_minutes is not None else cfg.sequence.window_minutes
+    window_minutes = (
+        args.window_minutes if args.window_minutes is not None else cfg.sequence.window_minutes
+    )
     pad_short = bool(args.pad_short or cfg.sequence.pad_short)
 
     if not splits_path.exists():
@@ -39,9 +45,13 @@ def main() -> None:
         sample_rate_hz=cfg.sequence.sample_rate_hz,
         pad_short=pad_short,
         treat_fhr_zero_as_missing=cfg.sequence.treat_fhr_zero_as_missing,
-        include_fhr_missing_mask=(False if args.signals_only else cfg.sequence.include_fhr_missing_mask),
+        include_fhr_missing_mask=(
+            False if args.signals_only else cfg.sequence.include_fhr_missing_mask
+        ),
         treat_toco_zero_as_missing=cfg.sequence.treat_toco_zero_as_missing,
-        include_toco_missing_mask=(False if args.signals_only else cfg.sequence.include_toco_missing_mask),
+        include_toco_missing_mask=(
+            False if args.signals_only else cfg.sequence.include_toco_missing_mask
+        ),
         include_padding_mask=(False if args.signals_only else cfg.sequence.include_padding_mask),
         chunk_vectors_per_batch=cfg.sequence.chunk_vectors_per_batch,
     )

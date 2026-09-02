@@ -9,16 +9,22 @@ from ctg_ml.splits import SplitFractions, create_stratified_splits, print_split_
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create BabyID-level train/val/test splits for CTG2.")
+    parser = argparse.ArgumentParser(
+        description="Create BabyID-level train/val/test splits for CTG2."
+    )
     parser.add_argument("--config", default="configs/ctg2_multimodal.toml")
-    parser.add_argument("--out", default=None, help="Output CSV path (defaults to artifacts_ctg2/splits.csv)")
+    parser.add_argument(
+        "--out", default=None, help="Output CSV path (defaults to artifacts_ctg2/splits.csv)"
+    )
     parser.add_argument("--at-risk-max-apgar", type=int, default=6)
     args = parser.parse_args()
 
     cfg = load_ctg2_config(args.config)
     out_path = args.out or str(cfg.paths.artifacts_dir / "splits.csv")
 
-    labels = load_registry_labels_v2(str(cfg.paths.registry_csv), at_risk_max_apgar=args.at_risk_max_apgar)
+    labels = load_registry_labels_v2(
+        str(cfg.paths.registry_csv), at_risk_max_apgar=args.at_risk_max_apgar
+    )
     print_label_summary(labels)
     splits = create_stratified_splits(
         labels=labels,

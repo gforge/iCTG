@@ -1,0 +1,28 @@
+# Shared ruff configuration for all three sub-projects (src/ictg, CTG_preprocess, CTG_ML).
+# Run from the repository root: `uvx ruff check` and `uvx ruff format`.
+line-length = 100
+target-version = "py312"
+
+extend-exclude = [
+    "CTG_preprocess/legacy",
+    "**/.venv",
+    "**/artifacts*",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line length is enforced by `ruff format`; long SQL/strings are allowed
+]
+
+[lint.isort]
+known-first-party = ["ictg", "ctg_ml", "config"]
+
+[format]
+quote-style = "double"

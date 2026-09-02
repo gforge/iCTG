@@ -3,9 +3,10 @@ import io
 import json
 import time
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Literal, Optional
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import ValidationError
@@ -33,8 +34,7 @@ def _single_line_message(message: str) -> str:
 
 def format_failure_detail(failure: ConversionFailure) -> str:
     return (
-        f"{failure.error_type} failure in {failure.source} "
-        f"at {failure.location}: {failure.message}"
+        f"{failure.error_type} failure in {failure.source} at {failure.location}: {failure.message}"
     )
 
 
@@ -105,7 +105,7 @@ class ProgressReporter:
         self,
         objects_yielded: int,
         bytes_read: int,
-        total_bytes: Optional[int],
+        total_bytes: int | None,
     ) -> None:
         self.report(
             objects_yielded=objects_yielded,
@@ -117,7 +117,7 @@ class ProgressReporter:
         self,
         objects_yielded: int,
         bytes_read: int,
-        total_bytes: Optional[int],
+        total_bytes: int | None,
     ) -> None:
         """Report progress with adaptive frequency."""
         if not self.__should_report(objects_yielded):
@@ -196,10 +196,10 @@ class ProgressReporter:
 def iter_concatenated_json(
     stream: io.TextIOWrapper,
     source: str,
-    failure_tracker: Optional[FailureTracker] = None,
+    failure_tracker: FailureTracker | None = None,
     chunk_size: int = 1 << 20,
-    total_bytes: Optional[int] = None,
-) -> Iterator[Dict[str, Any]]:
+    total_bytes: int | None = None,
+) -> Iterator[dict[str, Any]]:
     """
     Incrementally parse a stream that contains many top-level JSON objects back-to-back,
     possibly separated by newlines, without wrapping [] and commas. Constant memory.
@@ -249,8 +249,7 @@ def iter_concatenated_json(
                         source=source,
                         error_type="parse",
                         location=(
-                            f"byte offset "
-                            f"{buffer_start_offset + len(s[: exc.pos].encode('utf-8'))}"
+                            f"byte offset {buffer_start_offset + len(s[: exc.pos].encode('utf-8'))}"
                         ),
                         message=exc.msg,
                     )
@@ -295,8 +294,8 @@ def iter_concatenated_json(
 
 def records_from_path(
     path: Path,
-    member: Optional[str] = None,
-    failure_tracker: Optional[FailureTracker] = None,
+    member: str | None = None,
+    failure_tracker: FailureTracker | None = None,
 ) -> Iterator[PatientRecord]:
     # pylint: disable=contextmanager-generator-missing-cleanup
     total_bytes = None
@@ -340,25 +339,20 @@ def records_from_path(
 
 def dataframe_from_glob(
     glob_exprs: list[str],
-    member: Optional[str] = None,
-    limit: Optional[int] = None,
-    failure_tracker: Optional[FailureTracker] = None,
+    member: str | None = None,
+    limit: int | None = None,
+    failure_tracker: FailureTracker | None = None,
 ) -> pd.DataFrame:
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for glob_expr in glob_exprs:
         for path_str in sorted(glob.glob(glob_expr)):
             path = Path(path_str)
-            if (
-                path.suffix.lower() not in {JSON_SUFFIX, ZIP_SUFFIX}
-                or not path.is_file()
-            ):
+            if path.suffix.lower() not in {JSON_SUFFIX, ZIP_SUFFIX} or not path.is_file():
                 logger.warning("Skipping unsupported file: %s", path)
                 continue
 
             logger.info("Processing file: %s", path.name)
-            for rec in records_from_path(
-                path, member, failure_tracker=failure_tracker
-            ):
+            for rec in records_from_path(path, member, failure_tracker=failure_tracker):
                 rows.append(normalize_patient_record(rec))
                 if len(rows) % 1000 == 0:
                     logger.info("Processed %s records so far...", f"{len(rows):,}")

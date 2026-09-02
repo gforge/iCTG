@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import duckdb
 import pyarrow.parquet as pq
@@ -14,14 +14,14 @@ from config import (
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
     DEFAULT_STAGE3_DIR,
+    DEFAULT_STAGE3_GAP_MINUTES,
+    DEFAULT_STAGE3_PREG_GAP_DAYS,
     DEFAULT_STAGE4_DIR,
-    DEFAULT_STAGE5_OUTPUT_FILE,
     DEFAULT_STAGE5_5_OUTPUT_FILE,
+    DEFAULT_STAGE5_OUTPUT_FILE,
     DEFAULT_STAGE6_DIR,
     DEFAULT_STAGE7_CTG_PARQUET,
     DEFAULT_STAGE7_REGISTRY_CSV,
-    DEFAULT_STAGE3_GAP_MINUTES,
-    DEFAULT_STAGE3_PREG_GAP_DAYS,
 )
 
 
@@ -51,10 +51,14 @@ def _source_sql(path: str | Iterable[str]) -> tuple[str | None, int, int]:
 
     p = Path(path)
     if p.is_dir():
-        files = list(p.rglob('*.parquet'))
+        files = list(p.rglob("*.parquet"))
         if not files:
             return None, 0, 0
-        return f"read_parquet('{_safe(str(p / '**' / '*.parquet'))}')", len(files), sum(f.stat().st_size for f in files)
+        return (
+            f"read_parquet('{_safe(str(p / '**' / '*.parquet'))}')",
+            len(files),
+            sum(f.stat().st_size for f in files),
+        )
     if p.exists():
         return f"read_parquet('{_safe(str(p))}')", 1, p.stat().st_size
     return None, 0, 0
@@ -66,8 +70,8 @@ def _metadata_row_count(path: str | Iterable[str]) -> int | None:
     else:
         p = Path(path)
         if p.is_dir():
-            files = list(p.rglob('*.parquet'))
-        elif p.exists() and p.suffix == '.parquet':
+            files = list(p.rglob("*.parquet"))
+        elif p.exists() and p.suffix == ".parquet":
             files = [p]
         else:
             files = []
@@ -87,19 +91,21 @@ def _columns(con: duckdb.DuckDBPyConnection, source_sql: str) -> list[str]:
     return [row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {source_sql}").fetchall()]
 
 
-def _basic_counts(con: duckdb.DuckDBPyConnection, source_sql: str, cols: list[str]) -> tuple[int, int | None, int | None]:
+def _basic_counts(
+    con: duckdb.DuckDBPyConnection, source_sql: str, cols: list[str]
+) -> tuple[int, int | None, int | None]:
     select_parts = ["COUNT(*) AS rows"]
-    if 'BabyID' in cols:
-        select_parts.append('COUNT(DISTINCT BabyID) AS babies')
-    if 'PatientID' in cols:
-        select_parts.append('COUNT(DISTINCT PatientID) AS patients')
+    if "BabyID" in cols:
+        select_parts.append("COUNT(DISTINCT BabyID) AS babies")
+    if "PatientID" in cols:
+        select_parts.append("COUNT(DISTINCT PatientID) AS patients")
     row = con.execute(f"SELECT {', '.join(select_parts)} FROM {source_sql}").fetchone()
     rows = int(row[0] or 0)
     idx = 1
-    babies = int(row[idx] or 0) if 'BabyID' in cols else None
-    if 'BabyID' in cols:
+    babies = int(row[idx] or 0) if "BabyID" in cols else None
+    if "BabyID" in cols:
         idx += 1
-    patients = int(row[idx] or 0) if 'PatientID' in cols else None
+    patients = int(row[idx] or 0) if "PatientID" in cols else None
     return rows, babies, patients
 
 
@@ -169,9 +175,9 @@ def _pre_stage3_date_cluster_stats(
         GROUP BY PatientID, CAST(Timestamp AS DATE)
         """
     )
-    patients = con.execute(
-        f"SELECT COUNT(DISTINCT PatientID) FROM {table_name}_dates"
-    ).fetchone()[0]
+    patients = con.execute(f"SELECT COUNT(DISTINCT PatientID) FROM {table_name}_dates").fetchone()[
+        0
+    ]
     overlap = con.execute(
         f"""
         SELECT COUNT(*)
@@ -224,40 +230,40 @@ def _registry_overlap(con: duckdb.DuckDBPyConnection, source_sql: str) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Exact cohort reduction report across stages.')
-    parser.add_argument('--registry-csv', type=str, default=DEFAULT_PATIENT_CSV)
-    parser.add_argument('--gap-minutes', type=int, default=DEFAULT_STAGE3_GAP_MINUTES)
-    parser.add_argument('--preg-gap-days', type=int, default=DEFAULT_STAGE3_PREG_GAP_DAYS)
+    parser = argparse.ArgumentParser(description="Exact cohort reduction report across stages.")
+    parser.add_argument("--registry-csv", type=str, default=DEFAULT_PATIENT_CSV)
+    parser.add_argument("--gap-minutes", type=int, default=DEFAULT_STAGE3_GAP_MINUTES)
+    parser.add_argument("--preg-gap-days", type=int, default=DEFAULT_STAGE3_PREG_GAP_DAYS)
     parser.add_argument(
-        '--include-pre-stage3-pregnancies',
-        action='store_true',
+        "--include-pre-stage3-pregnancies",
+        action="store_true",
         help=(
-            'Also estimate pregnancy counts for raw/stage1/stage2. '
-            'Defaults to a low-memory PatientID/date clustering algorithm.'
+            "Also estimate pregnancy counts for raw/stage1/stage2. "
+            "Defaults to a low-memory PatientID/date clustering algorithm."
         ),
     )
     parser.add_argument(
-        '--pre-stage3-pregnancy-method',
-        choices=['date-clusters', 'exact-windows'],
-        default='date-clusters',
+        "--pre-stage3-pregnancy-method",
+        choices=["date-clusters", "exact-windows"],
+        default="date-clusters",
         help=(
-            'Method for --include-pre-stage3-pregnancies. date-clusters is much lower memory; '
-            'exact-windows reproduces the second-level session logic but can need very large RAM.'
+            "Method for --include-pre-stage3-pregnancies. date-clusters is much lower memory; "
+            "exact-windows reproduces the second-level session logic but can need very large RAM."
         ),
     )
     parser.add_argument(
-        '--exact-pre-stage3-counts',
-        action='store_true',
-        help='Scan raw/stage1/stage2 to count distinct patients and registry overlap instead of using only parquet metadata row counts.',
+        "--exact-pre-stage3-counts",
+        action="store_true",
+        help="Scan raw/stage1/stage2 to count distinct patients and registry overlap instead of using only parquet metadata row counts.",
     )
     args = parser.parse_args()
 
     start_all = time.perf_counter()
     con = duckdb.connect()
-    con.execute('PRAGMA threads=4')
+    con.execute("PRAGMA threads=4")
 
     safe_registry = _safe(args.registry_csv)
-    print('Building registry PatientID lookup...')
+    print("Building registry PatientID lookup...")
     con.execute(
         f"""
         CREATE TEMP TABLE registry_ids AS
@@ -270,42 +276,46 @@ def main() -> None:
         WHERE reg_digits IS NOT NULL AND length(reg_digits) >= 12
         """
     )
-    reg_patients = con.execute('SELECT COUNT(*) FROM registry_ids').fetchone()[0]
-    print(f'registry_person_ids: {reg_patients}')
+    reg_patients = con.execute("SELECT COUNT(*) FROM registry_ids").fetchone()[0]
+    print(f"registry_person_ids: {reg_patients}")
 
     stages = [
-        ('raw', DEFAULT_STAGE0_DIR),
-        ('stage1', DEFAULT_STAGE1_DIR),
-        ('stage2', DEFAULT_STAGE2_DIR),
-        ('stage3', DEFAULT_STAGE3_DIR),
-        ('stage4', DEFAULT_STAGE4_DIR),
-        ('stage5', DEFAULT_STAGE5_OUTPUT_FILE),
-        ('stage5_5', DEFAULT_STAGE5_5_OUTPUT_FILE),
-        ('stage6', DEFAULT_STAGE6_DIR),
-        ('stage7_ctg', DEFAULT_STAGE7_CTG_PARQUET),
-        ('stage7_registry', DEFAULT_STAGE7_REGISTRY_CSV),
+        ("raw", DEFAULT_STAGE0_DIR),
+        ("stage1", DEFAULT_STAGE1_DIR),
+        ("stage2", DEFAULT_STAGE2_DIR),
+        ("stage3", DEFAULT_STAGE3_DIR),
+        ("stage4", DEFAULT_STAGE4_DIR),
+        ("stage5", DEFAULT_STAGE5_OUTPUT_FILE),
+        ("stage5_5", DEFAULT_STAGE5_5_OUTPUT_FILE),
+        ("stage6", DEFAULT_STAGE6_DIR),
+        ("stage7_ctg", DEFAULT_STAGE7_CTG_PARQUET),
+        ("stage7_registry", DEFAULT_STAGE7_REGISTRY_CSV),
     ]
 
-    print('stage,rows,patients,babies,pregnancies,registry_overlap_patients,files,size_mb,row_retention_from_previous_pct,baby_retention_from_previous_pct')
+    print(
+        "stage,rows,patients,babies,pregnancies,registry_overlap_patients,files,size_mb,row_retention_from_previous_pct,baby_retention_from_previous_pct"
+    )
     completed = 0
     total = len(stages)
     prev_rows: int | None = None
     prev_babies: int | None = None
     for name, path in stages:
         stage_start = time.perf_counter()
-        print(f'Analyzing {name} ({completed + 1}/{total})...')
+        print(f"Analyzing {name} ({completed + 1}/{total})...")
         source_sql, file_count, byte_size = _source_sql(path)
         if not source_sql:
-            print(f'{name},missing,-,-,-,-,0,0.0,-,-')
+            print(f"{name},missing,-,-,-,-,0,0.0,-,-")
             completed += 1
             continue
 
-        is_csv = name == 'stage7_registry'
-        is_pre_stage3 = name in {'raw', 'stage1', 'stage2'}
-        if is_pre_stage3 and not (args.exact_pre_stage3_counts or args.include_pre_stage3_pregnancies):
+        is_csv = name == "stage7_registry"
+        is_pre_stage3 = name in {"raw", "stage1", "stage2"}
+        if is_pre_stage3 and not (
+            args.exact_pre_stage3_counts or args.include_pre_stage3_pregnancies
+        ):
             metadata_rows = _metadata_row_count(path)
             if metadata_rows is None:
-                print(f'{name},missing,-,-,-,-,0,0.0,-,-')
+                print(f"{name},missing,-,-,-,-,0,0.0,-,-")
                 completed += 1
                 continue
             rows = metadata_rows
@@ -324,21 +334,25 @@ def main() -> None:
             avg_stage = elapsed_all / completed if completed else 0.0
             remaining = avg_stage * (total - completed)
             print(
-                f'  done {name} in {_fmt_seconds(elapsed_stage)}; '
-                f'elapsed {_fmt_seconds(elapsed_all)}; '
-                f'eta {_fmt_seconds(remaining)}'
+                f"  done {name} in {_fmt_seconds(elapsed_stage)}; "
+                f"elapsed {_fmt_seconds(elapsed_all)}; "
+                f"eta {_fmt_seconds(remaining)}"
             )
             continue
 
-        if is_pre_stage3 and args.include_pre_stage3_pregnancies and args.pre_stage3_pregnancy_method == 'date-clusters':
+        if (
+            is_pre_stage3
+            and args.include_pre_stage3_pregnancies
+            and args.pre_stage3_pregnancy_method == "date-clusters"
+        ):
             metadata_rows = _metadata_row_count(path)
             if metadata_rows is None:
-                print(f'{name},missing,-,-,-,-,0,0.0,-,-')
+                print(f"{name},missing,-,-,-,-,0,0.0,-,-")
                 completed += 1
                 continue
             print(
-                f'  {name}: counting pregnancies from distinct PatientID/date clusters '
-                f'(gap > {args.preg_gap_days} days)...'
+                f"  {name}: counting pregnancies from distinct PatientID/date clusters "
+                f"(gap > {args.preg_gap_days} days)..."
             )
             patients, pregnancies, overlap = _pre_stage3_date_cluster_stats(
                 con,
@@ -362,9 +376,9 @@ def main() -> None:
             avg_stage = elapsed_all / completed if completed else 0.0
             remaining = avg_stage * (total - completed)
             print(
-                f'  done {name} in {_fmt_seconds(elapsed_stage)}; '
-                f'elapsed {_fmt_seconds(elapsed_all)}; '
-                f'eta {_fmt_seconds(remaining)}'
+                f"  done {name} in {_fmt_seconds(elapsed_stage)}; "
+                f"elapsed {_fmt_seconds(elapsed_all)}; "
+                f"eta {_fmt_seconds(remaining)}"
             )
             continue
 
@@ -373,10 +387,10 @@ def main() -> None:
             source_sql = f"read_csv_auto('{safe_path}', header=true)"
         cols = _columns(con, source_sql)
         rows, babies, patients = _basic_counts(con, source_sql, cols)
-        if 'BabyID' in cols:
+        if "BabyID" in cols:
             pregnancies = babies
-        elif args.include_pre_stage3_pregnancies and 'PatientID' in cols and 'Timestamp' in cols:
-            print(f'  {name}: counting pregnancies from PatientID/Timestamp sessions...')
+        elif args.include_pre_stage3_pregnancies and "PatientID" in cols and "Timestamp" in cols:
+            print(f"  {name}: counting pregnancies from PatientID/Timestamp sessions...")
             pregnancies = _pregnancy_count_pre_stage3(
                 con,
                 source_sql,
@@ -386,10 +400,12 @@ def main() -> None:
         else:
             pregnancies = None
 
-        overlap = _registry_overlap(con, source_sql) if 'PatientID' in cols and not is_csv else None
+        overlap = _registry_overlap(con, source_sql) if "PatientID" in cols and not is_csv else None
         size_mb = byte_size / (1024 * 1024)
         row_retention = rows / prev_rows * 100.0 if prev_rows else None
-        baby_retention = babies / prev_babies * 100.0 if babies is not None and prev_babies else None
+        baby_retention = (
+            babies / prev_babies * 100.0 if babies is not None and prev_babies else None
+        )
         row_retention_out = f"{row_retention:.2f}" if row_retention is not None else "-"
         baby_retention_out = f"{baby_retention:.2f}" if baby_retention is not None else "-"
         print(
@@ -408,13 +424,13 @@ def main() -> None:
         avg_stage = elapsed_all / completed if completed else 0.0
         remaining = avg_stage * (total - completed)
         print(
-            f'  done {name} in {_fmt_seconds(elapsed_stage)}; '
-            f'elapsed {_fmt_seconds(elapsed_all)}; '
-            f'eta {_fmt_seconds(remaining)}'
+            f"  done {name} in {_fmt_seconds(elapsed_stage)}; "
+            f"elapsed {_fmt_seconds(elapsed_all)}; "
+            f"eta {_fmt_seconds(remaining)}"
         )
 
-    print(f'Total runtime: {_fmt_seconds(time.perf_counter() - start_all)}')
+    print(f"Total runtime: {_fmt_seconds(time.perf_counter() - start_all)}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

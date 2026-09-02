@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 
 import joblib
-import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
@@ -61,10 +60,14 @@ def print_metrics(prefix: str, metrics: dict[str, float]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a baseline binary classifier on aggregated CTG features.")
+    parser = argparse.ArgumentParser(
+        description="Train a baseline binary classifier on aggregated CTG features."
+    )
     parser.add_argument("--config", default="configs/default.toml")
     parser.add_argument("--splits", default=None)
-    parser.add_argument("--save-model", action="store_true", help="Save trained sklearn pipeline to artifacts/")
+    parser.add_argument(
+        "--save-model", action="store_true", help="Save trained sklearn pipeline to artifacts/"
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -114,9 +117,15 @@ def main() -> None:
     test_prob = model.predict_proba(X_test)[:, 1]
 
     tuned_thr = best_f1_threshold(y_val.astype(int), val_prob.astype(float))
-    val_metrics = compute_binary_metrics(y_val.astype(int), val_prob.astype(float), threshold=tuned_thr)
-    test_metrics = compute_binary_metrics(y_test.astype(int), test_prob.astype(float), threshold=tuned_thr)
-    test_metrics_default = compute_binary_metrics(y_test.astype(int), test_prob.astype(float), threshold=0.5)
+    val_metrics = compute_binary_metrics(
+        y_val.astype(int), val_prob.astype(float), threshold=tuned_thr
+    )
+    test_metrics = compute_binary_metrics(
+        y_test.astype(int), test_prob.astype(float), threshold=tuned_thr
+    )
+    test_metrics_default = compute_binary_metrics(
+        y_test.astype(int), test_prob.astype(float), threshold=0.5
+    )
 
     print_metrics("VAL (tuned on val)", val_metrics)
     print_metrics("TEST (val-tuned thr)", test_metrics)

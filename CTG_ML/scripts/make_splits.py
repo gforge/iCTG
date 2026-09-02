@@ -10,7 +10,9 @@ from ctg_ml.splits import SplitFractions, create_stratified_splits, print_split_
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create BabyID-level train/val/test splits.")
     parser.add_argument("--config", default="configs/default.toml")
-    parser.add_argument("--out", default=None, help="Output CSV path (defaults to artifacts/splits.csv)")
+    parser.add_argument(
+        "--out", default=None, help="Output CSV path (defaults to artifacts/splits.csv)"
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)

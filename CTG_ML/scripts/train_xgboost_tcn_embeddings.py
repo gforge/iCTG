@@ -233,9 +233,7 @@ def run_xgboost(
             "This experiment trains one binary XGBoost classifier per target using frozen "
             f"TCN embedding features in `{args.feature_mode}` mode.",
         )
-        (output_dir / "xgboost_tcn_embedding_summary.md").write_text(
-            markdown
-        )
+        (output_dir / "xgboost_tcn_embedding_summary.md").write_text(markdown)
     print(f"\nWrote summary: {summary_path}")
 
 

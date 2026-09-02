@@ -12,7 +12,7 @@ class Chomp1d(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.chomp_size == 0:
             return x
-        return x[:, :, :-self.chomp_size].contiguous()
+        return x[:, :, : -self.chomp_size].contiguous()
 
 
 class TemporalBlock(nn.Module):
@@ -151,7 +151,9 @@ class MultimodalMultitaskTCN(nn.Module):
             nn.Dropout(dropout),
         )
         self.apgar_head = nn.Linear(fusion_hidden_dim, num_apgar_outputs * 11)
-        self.categorical_heads = nn.ModuleList([nn.Linear(fusion_hidden_dim, int(dim)) for dim in categorical_output_dims])
+        self.categorical_heads = nn.ModuleList(
+            [nn.Linear(fusion_hidden_dim, int(dim)) for dim in categorical_output_dims]
+        )
         self.regression_head = nn.Linear(fusion_hidden_dim, num_regression_outputs)
         self.binary_head = nn.Linear(fusion_hidden_dim, num_binary_outputs)
         self.num_apgar_outputs = num_apgar_outputs
@@ -164,4 +166,9 @@ class MultimodalMultitaskTCN(nn.Module):
         fused = self.fusion(torch.cat([seq_embed, tab_embed], dim=1))
         apgar_logits = self.apgar_head(fused).view(-1, self.num_apgar_outputs, 11)
         categorical_logits = [head(fused) for head in self.categorical_heads]
-        return apgar_logits, categorical_logits, self.regression_head(fused), self.binary_head(fused)
+        return (
+            apgar_logits,
+            categorical_logits,
+            self.regression_head(fused),
+            self.binary_head(fused),
+        )

@@ -17,7 +17,6 @@ from .json_decoder import (
 from .logging_config import setup_logging
 from .write_parquet import write_parquet_per_input
 
-
 DETAIL_LOG_THRESHOLD = 20
 TOP_PROBLEM_FILES = 5
 
@@ -54,9 +53,7 @@ def _log_failures(logger: logging.Logger, failure_tracker: FailureTracker) -> No
     log_path = _get_log_file_path(logger)
 
     if failure_tracker.count < DETAIL_LOG_THRESHOLD:
-        logger.warning(
-            "Encountered %s conversion failures", f"{failure_tracker.count:,}"
-        )
+        logger.warning("Encountered %s conversion failures", f"{failure_tracker.count:,}")
         for detail in details:
             logger.warning(detail)
         return
@@ -87,9 +84,7 @@ def convert_raw_ctg() -> None:
             "Pydantic, return DataFrame or write Parquet."
         )
     )
-    ap.add_argument(
-        "inputs", nargs="+", help="Input files or globs (e.g. 'Export_*.json')"
-    )
+    ap.add_argument("inputs", nargs="+", help="Input files or globs (e.g. 'Export_*.json')")
     ap.add_argument(
         "--zip-member",
         default=None,

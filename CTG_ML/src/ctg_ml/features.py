@@ -5,7 +5,6 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-
 AGG_FEATURE_SQL = """
 WITH raw AS (
     SELECT
