@@ -6,7 +6,9 @@ import gc
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
@@ -21,12 +23,14 @@ from config import (
     DEFAULT_STAGE1_DIR,
     DEFAULT_STAGE2_DIR,
     DEFAULT_STAGE2_EXTRA_COLUMNS,
+    DEFAULT_STAGE3_ALL_SESSIONS_DIR,
     DEFAULT_STAGE3_BUCKETS,
     DEFAULT_STAGE3_DIR,
     DEFAULT_STAGE3_GAP_MINUTES,
     DEFAULT_STAGE3_LAST_HOUR_MINUTES,
     DEFAULT_STAGE3_OUTPUT_FILE,
     DEFAULT_STAGE3_PREG_GAP_DAYS,
+    DEFAULT_STAGE3_WINDOW_SCOPE,
     DEFAULT_STAGE4_DIR,
     DEFAULT_STAGE4_DUP_THRESHOLD,
     DEFAULT_STAGE4_OUTPUT_FILE,
@@ -166,6 +170,23 @@ def _build_stage2_shards(
     return shard_plans, total_row_groups
 
 
+def _clear_parquet_outputs(output_dir: Path, stage_label: str) -> None:
+    """Remove parquet files (and emptied partition directories) left by a previous run.
+
+    ``ds.write_dataset(..., existing_data_behavior="overwrite_or_ignore")`` only overwrites
+    part files with the same name; a rerun that produces fewer parts would otherwise leave
+    stale files that later stages read as duplicated rows.
+    """
+    stale = [path for path in output_dir.rglob("*.parquet") if path.is_file()]
+    for path in stale:
+        path.unlink()
+    for sub in sorted((p for p in output_dir.rglob("*") if p.is_dir()), reverse=True):
+        if not any(sub.iterdir()):
+            sub.rmdir()
+    if stale:
+        print(f"{stage_label}: removed {len(stale)} stale parquet files from {output_dir}")
+
+
 def stage1_timefilter(
     input_dir: str | Path,
     output_dir: str | Path,
@@ -194,6 +215,7 @@ def stage1_timefilter(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _clear_parquet_outputs(output_dir, "Stage1")
 
     ds.write_dataset(
         batch_iter(),
@@ -232,35 +254,106 @@ def _compute_fhr(batch: pa.RecordBatch) -> pa.Array:
     return fhr.cast(pa.float32())
 
 
+_B64_ALPHABET = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+_B64_LUT = np.full(256, 0xFF, dtype=np.uint8)
+for _i, _ch in enumerate(_B64_ALPHABET):
+    _B64_LUT[_ch] = _i
+
+
+def _toco_from_bytes(decoded: bytes) -> float:
+    """Mean of the physiologically valid toco bytes (1..99); mean of all bytes if none; 0 if empty."""
+    if not decoded:
+        return 0.0
+    valid = [value for value in decoded if 1 <= value <= 99]
+    if valid:
+        return sum(valid) / len(valid)
+    return sum(decoded) / len(decoded)
+
+
+def _fixed_width_string_bytes(arr: pa.Array, width: int) -> np.ndarray:
+    """Concatenated bytes of a string array whose values are all ``width`` bytes long.
+
+    Reads the Arrow data buffer directly (no Python objects) when the array is compact and
+    every value really is ``width`` bytes; otherwise falls back to joining the Python strings
+    with non-ASCII characters replaced, which the base64 lookup then rejects.
+    """
+    n = len(arr)
+    buffers = arr.buffers() if n and arr.null_count == 0 and pa.types.is_string(arr.type) else []
+    if len(buffers) == 3 and buffers[1] is not None and buffers[2] is not None:
+        offsets = np.frombuffer(
+            buffers[1], dtype=np.int32, count=n + 1, offset=arr.offset * 4
+        ).astype(np.int64)
+        if offsets[0] == 0 and offsets[-1] == width * n and bool(np.all(np.diff(offsets) == width)):
+            return np.frombuffer(buffers[2], dtype=np.uint8, count=width * n)
+    joined = "".join(str(v) for v in arr.to_pylist()).encode("ascii", errors="replace")
+    return np.frombuffer(joined, dtype=np.uint8)
+
+
+def _decode_toco_fast(raw: np.ndarray) -> np.ndarray:
+    """Vectorised decode of concatenated 8-character base64 strings ending in ``==``.
+
+    ``raw`` holds ``n * 8`` ASCII bytes. Returns an ``(n, 4)`` uint8 array; rows containing
+    characters outside the base64 alphabet get a 0xFF marker in every column so the caller
+    can fall back to the exact per-cell path.
+    """
+    if raw.size == 0:
+        return np.zeros((0, 4), dtype=np.uint8)
+    sextets = _B64_LUT[raw].reshape(-1, 8)[:, :6].astype(np.uint16)
+    bad = (sextets == 0xFF).any(axis=1)
+    s0, s1, s2, s3, s4, s5 = (sextets[:, i] for i in range(6))
+    out = np.empty((sextets.shape[0], 4), dtype=np.uint8)
+    out[:, 0] = ((s0 << 2) | (s1 >> 4)) & 0xFF
+    out[:, 1] = (((s1 & 0xF) << 4) | (s2 >> 2)) & 0xFF
+    out[:, 2] = (((s2 & 0x3) << 6) | s3) & 0xFF
+    out[:, 3] = ((s4 << 2) | (s5 >> 4)) & 0xFF
+    out[bad] = 0xFF
+    return out
+
+
 def _compute_toco(batch: pa.RecordBatch) -> pa.Array:
+    """Per-row toco from the base64 ``Toco_Values`` column (4 samples per second).
+
+    The exports encode every second as an 8-character base64 string; those rows are decoded
+    with numpy in bulk. Anything else (nulls, other lengths, malformed strings) goes through
+    the exact per-cell fallback, so the result is identical to a pure-Python decode.
+    """
     idx = batch.schema.get_field_index("Toco_Values")
     if idx == -1:
         return pa.array([0.0] * batch.num_rows, type=pa.float32())
     toco_vals = batch.column(idx)
-    out = [0.0] * batch.num_rows
-    # Decode one cell at a time to avoid materializing an entire string+bytes batch in Python.
-    for row_idx, scalar in enumerate(toco_vals):
-        encoded = scalar.as_py()
+    n = batch.num_rows
+    out = np.zeros(n, dtype=np.float32)
+
+    filled = cast(pa.StringArray, pc.fill_null(toco_vals, pa.scalar("", type=toco_vals.type)))
+    lengths: pa.Array = pc.utf8_length(filled)
+    is_fast: pa.Array = pc.and_(
+        pc.equal(lengths, pa.scalar(8)),
+        pc.ends_with(filled, pattern="=="),
+    )
+    fast_idx = np.flatnonzero(is_fast.to_numpy(zero_copy_only=False))
+    if fast_idx.size:
+        taken = pc.take(toco_vals, pa.array(fast_idx, type=pa.int64()))
+        raw = _fixed_width_string_bytes(taken, 8)
+        decoded = _decode_toco_fast(raw)
+        bad = (decoded == 0xFF).all(axis=1)
+        valid = (decoded >= 1) & (decoded <= 99)
+        valid_count = valid.sum(axis=1)
+        valid_sum = (decoded * valid).sum(axis=1, dtype=np.float64)
+        mean_all = decoded.sum(axis=1, dtype=np.float64) / 4.0
+        fast_out = np.where(valid_count > 0, valid_sum / np.maximum(valid_count, 1), mean_all)
+        out[fast_idx[~bad]] = fast_out[~bad]
+        slow_rows = np.setdiff1d(np.arange(n), fast_idx[~bad])
+    else:
+        slow_rows = np.arange(n)
+
+    for row_idx in slow_rows:
+        encoded = toco_vals[int(row_idx)].as_py()
         if encoded is None:
             continue
         try:
-            decoded = base64.b64decode(encoded)
+            out[row_idx] = _toco_from_bytes(base64.b64decode(encoded))
         except Exception:
             continue
-
-        total = 0
-        valid_total = 0
-        valid_count = 0
-        for value in decoded:
-            total += value
-            if 1 <= value <= 99:
-                valid_total += value
-                valid_count += 1
-
-        if valid_count:
-            out[row_idx] = valid_total / valid_count
-        elif decoded:
-            out[row_idx] = total / len(decoded)
     return pa.array(out, type=pa.float32())
 
 
@@ -502,7 +595,13 @@ def stage3_sessionfilter(
     bucket_count: int = DEFAULT_STAGE3_BUCKETS,
     bucket_index: int | None = None,
     prebucket: bool = True,
+    window_scope: str = DEFAULT_STAGE3_WINDOW_SCOPE,
+    all_sessions_output: str | Path | None = None,
 ) -> None:
+    if window_scope not in STAGE3_WINDOW_SCOPES:
+        raise ValueError(
+            f"window_scope must be one of {STAGE3_WINDOW_SCOPES}, got {window_scope!r}"
+        )
     try:
         import duckdb
     except ImportError as exc:
@@ -540,101 +639,31 @@ def stage3_sessionfilter(
         return _stage3_bucket_expr(bucket_count)
 
     def _build_query(extra_where: str) -> str:
-        where_clause = ("\n    WHERE " + extra_where) if extra_where else ""
-        return f"""
-WITH ordered AS (
-    SELECT
-        PatientID,
-        RegistrationID,
-        Timestamp,
-        FHR,
-        toco,
-        Hr1_SignalQuality,
-        Hr1Mode,
-        TocoMode,
-        Timestamp - LAG(Timestamp) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS gap
-    FROM ctg{where_clause}
-),
-sessioned AS (
-    SELECT
-        *,
-        SUM(CASE WHEN gap IS NULL OR gap > INTERVAL '{gap_minutes} minutes'
-            THEN 1 ELSE 0 END
-        ) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS session_id
-    FROM ordered
-),
-session_end AS (
-    SELECT PatientID, session_id, MAX(Timestamp) AS session_end
-    FROM sessioned
-    GROUP BY PatientID, session_id
-),
-preg_sessions AS (
-    SELECT
-        PatientID,
-        session_id,
-        session_end,
-        SUM(CASE WHEN prev_end IS NULL OR session_end - prev_end > INTERVAL '{preg_gap_days} days'
-            THEN 1 ELSE 0 END
-        ) OVER (PARTITION BY PatientID ORDER BY session_end) AS pregnancy_id
-    FROM (
-        SELECT
-            *,
-            LAG(session_end) OVER (PARTITION BY PatientID ORDER BY session_end) AS prev_end
-        FROM session_end
-    )
-),
-final_sessions AS (
-    SELECT PatientID, pregnancy_id, MAX(session_end) AS session_end
-    FROM preg_sessions
-    GROUP BY PatientID, pregnancy_id
-),
-anchors AS (
-    SELECT
-        s.PatientID,
-        p.pregnancy_id,
-        s.session_id,
-        p.session_end,
-        MAX(s.Timestamp) FILTER (WHERE s.FHR > 0) AS last_nz_ts
-    FROM sessioned s
-    JOIN preg_sessions p
-      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
-    JOIN final_sessions f
-      ON p.PatientID = f.PatientID
-     AND p.pregnancy_id = f.pregnancy_id
-     AND p.session_end = f.session_end
-    GROUP BY s.PatientID, p.pregnancy_id, s.session_id, p.session_end
-),
-final_rows AS (
-    SELECT
-        s.PatientID,
-        s.RegistrationID,
-        s.Timestamp,
-        s.FHR,
-        s.toco,
-        s.Hr1_SignalQuality,
-        s.Hr1Mode,
-        s.TocoMode,
-        a.session_end,
-        COALESCE(a.last_nz_ts, a.session_end) AS anchor_ts
-    FROM sessioned s
-    JOIN anchors a
-      ON s.PatientID = a.PatientID AND s.session_id = a.session_id
-    WHERE s.Timestamp BETWEEN COALESCE(a.last_nz_ts, a.session_end)
-        - INTERVAL '{last_hour_minutes} minutes'
-        AND COALESCE(a.last_nz_ts, a.session_end)
-)
-SELECT
-    {babyid_expr} AS BabyID,
-    PatientID,
-    RegistrationID,
-    Timestamp,
-    FHR,
-    toco,
-    Hr1_SignalQuality,
-    Hr1Mode,
-    TocoMode
-FROM final_rows
-"""
+        return _stage3_query(
+            babyid_expr,
+            gap_minutes=gap_minutes,
+            preg_gap_days=preg_gap_days,
+            last_hour_minutes=last_hour_minutes,
+            extra_where=extra_where,
+            window_scope=window_scope,
+        )
+
+    def _build_all_sessions_query(extra_where: str) -> str:
+        return _stage3_all_sessions_query(
+            babyid_expr,
+            gap_minutes=gap_minutes,
+            preg_gap_days=preg_gap_days,
+            last_hour_minutes=last_hour_minutes,
+            extra_where=extra_where,
+        )
+
+    all_sessions_dir = Path(all_sessions_output) if all_sessions_output else None
+    if all_sessions_dir is not None:
+        all_sessions_dir.mkdir(parents=True, exist_ok=True)
+        if bucket_index is None:
+            for stale in all_sessions_dir.glob("all_sessions*.parquet"):
+                stale.unlink()
+        print(f"Stage3: also writing all sessions for pretraining to {all_sessions_dir}")
 
     output_path = Path(output_file)
     prebucket_dir: Path | None = None
@@ -681,24 +710,260 @@ FROM final_rows
                         "CREATE OR REPLACE VIEW ctg AS SELECT * FROM "
                         f"{_duckdb_read_parquet_sql(bucket_path)}"
                     )
-                    query = _build_query("")
+                    bucket_where = ""
                 else:
                     con.execute(f"CREATE OR REPLACE VIEW ctg AS SELECT * FROM {source_sql}")
-                    query = _build_query(f"{_bucket_expr()} = {idx}")
+                    bucket_where = f"{_bucket_expr()} = {idx}"
+                query = _build_query(bucket_where)
 
                 if out_path.exists():
                     out_path.unlink()
                 con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_path)])
+                if all_sessions_dir is not None:
+                    all_path = all_sessions_dir / f"all_sessions_bucket_{idx:04d}.parquet"
+                    if all_path.exists():
+                        all_path.unlink()
+                    con.execute(
+                        "COPY ("
+                        + _build_all_sessions_query(bucket_where)
+                        + ") TO ? (FORMAT PARQUET)",
+                        [str(all_path)],
+                    )
         else:
             if output_path.exists():
                 output_path.unlink()
             con.execute(f"CREATE OR REPLACE VIEW ctg AS SELECT * FROM {source_sql}")
             query = _build_query("")
             con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(output_path)])
+            if all_sessions_dir is not None:
+                all_path = all_sessions_dir / "all_sessions.parquet"
+                if all_path.exists():
+                    all_path.unlink()
+                con.execute(
+                    "COPY (" + _build_all_sessions_query("") + ") TO ? (FORMAT PARQUET)",
+                    [str(all_path)],
+                )
     finally:
         con.close()
         if prebucket_dir is not None and prebucket_dir.exists():
             shutil.rmtree(prebucket_dir)
+
+
+STAGE3_WINDOW_SCOPES = ("pregnancy", "final_session")
+
+STAGE3_SIGNAL_COLUMNS = (
+    "PatientID",
+    "RegistrationID",
+    "Timestamp",
+    "FHR",
+    "toco",
+    "Hr1_SignalQuality",
+    "Hr1Mode",
+    "TocoMode",
+)
+
+
+def _stage3_common_ctes(gap_minutes: int, preg_gap_days: int, extra_where: str) -> str:
+    """CTEs shared by the Stage 3 queries over a view ``ctg`` with the Stage 2 columns.
+
+    ``sessioned`` splits each patient's rows into sessions at gaps longer than
+    ``gap_minutes``; ``preg_sessions`` groups sessions into pregnancies at gaps longer than
+    ``preg_gap_days``; ``final_sessions`` gives each pregnancy's last session end (the key
+    used for the BabyID hash); ``pregnancy_anchors`` gives the last non-zero FHR of the
+    whole pregnancy (falling back to its final session end).
+    """
+    where_clause = ("\n    WHERE " + extra_where) if extra_where else ""
+    columns = ",\n        ".join(STAGE3_SIGNAL_COLUMNS)
+    # DISTINCT: the raw exports overlap in time (the same recording is exported more than
+    # once), so identical rows are collapsed here before sessionisation. Rows that differ
+    # for the same second are kept and handled by the Stage 4 conflict rule.
+    return f"""
+WITH deduplicated AS (
+    SELECT DISTINCT
+        {columns}
+    FROM ctg{where_clause}
+),
+ordered AS (
+    SELECT
+        *,
+        Timestamp - LAG(Timestamp) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS gap
+    FROM deduplicated
+),
+sessioned AS (
+    SELECT
+        *,
+        SUM(CASE WHEN gap IS NULL OR gap > INTERVAL '{gap_minutes} minutes'
+            THEN 1 ELSE 0 END
+        ) OVER (PARTITION BY PatientID ORDER BY Timestamp) AS session_id
+    FROM ordered
+),
+session_end AS (
+    SELECT PatientID, session_id, MAX(Timestamp) AS session_end
+    FROM sessioned
+    GROUP BY PatientID, session_id
+),
+preg_sessions AS (
+    SELECT
+        PatientID,
+        session_id,
+        session_end,
+        SUM(CASE WHEN prev_end IS NULL OR session_end - prev_end > INTERVAL '{preg_gap_days} days'
+            THEN 1 ELSE 0 END
+        ) OVER (PARTITION BY PatientID ORDER BY session_end) AS pregnancy_id
+    FROM (
+        SELECT
+            *,
+            LAG(session_end) OVER (PARTITION BY PatientID ORDER BY session_end) AS prev_end
+        FROM session_end
+    )
+),
+final_sessions AS (
+    SELECT PatientID, pregnancy_id, MAX(session_end) AS session_end
+    FROM preg_sessions
+    GROUP BY PatientID, pregnancy_id
+),
+pregnancy_anchors AS (
+    SELECT
+        s.PatientID,
+        p.pregnancy_id,
+        f.session_end,
+        COALESCE(MAX(s.Timestamp) FILTER (WHERE s.FHR > 0), f.session_end) AS anchor_ts
+    FROM sessioned s
+    JOIN preg_sessions p
+      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
+    JOIN final_sessions f
+      ON f.PatientID = p.PatientID AND f.pregnancy_id = p.pregnancy_id
+    GROUP BY s.PatientID, p.pregnancy_id, f.session_end
+)"""
+
+
+def _stage3_query(
+    babyid_expr: str,
+    *,
+    gap_minutes: int,
+    preg_gap_days: int,
+    last_hour_minutes: int,
+    extra_where: str = "",
+    window_scope: str = DEFAULT_STAGE3_WINDOW_SCOPE,
+) -> str:
+    """Stage 3 SQL: the last ``last_hour_minutes`` of signal per pregnancy, with BabyID.
+
+    ``window_scope="pregnancy"`` anchors on the last non-zero FHR anywhere in the pregnancy
+    and keeps rows from every session inside the window. ``"final_session"`` is the legacy
+    behaviour that only looks at the pregnancy's last session, which silently discards the
+    whole labour when the recording ends with a short reconnection or a signal-less tail.
+    """
+    if window_scope not in STAGE3_WINDOW_SCOPES:
+        raise ValueError(
+            f"window_scope must be one of {STAGE3_WINDOW_SCOPES}, got {window_scope!r}"
+        )
+    common = _stage3_common_ctes(gap_minutes, preg_gap_days, extra_where)
+    signal = ",\n        ".join(f"s.{name}" for name in STAGE3_SIGNAL_COLUMNS)
+    window = f"BETWEEN a.anchor_ts - INTERVAL '{last_hour_minutes} minutes' AND a.anchor_ts"
+    if window_scope == "pregnancy":
+        final_rows = f"""
+final_rows AS (
+    SELECT
+        {signal},
+        a.session_end
+    FROM sessioned s
+    JOIN preg_sessions p
+      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
+    JOIN pregnancy_anchors a
+      ON a.PatientID = p.PatientID AND a.pregnancy_id = p.pregnancy_id
+    WHERE s.Timestamp {window}
+)"""
+    else:
+        final_rows = f"""
+final_session_anchors AS (
+    SELECT
+        s.PatientID,
+        s.session_id,
+        p.session_end,
+        COALESCE(MAX(s.Timestamp) FILTER (WHERE s.FHR > 0), p.session_end) AS anchor_ts
+    FROM sessioned s
+    JOIN preg_sessions p
+      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
+    JOIN final_sessions f
+      ON f.PatientID = p.PatientID
+     AND f.pregnancy_id = p.pregnancy_id
+     AND f.session_end = p.session_end
+    GROUP BY s.PatientID, s.session_id, p.session_end
+),
+final_rows AS (
+    SELECT
+        {signal},
+        a.session_end
+    FROM sessioned s
+    JOIN final_session_anchors a
+      ON s.PatientID = a.PatientID AND s.session_id = a.session_id
+    WHERE s.Timestamp {window}
+)"""
+    output = ",\n    ".join(STAGE3_SIGNAL_COLUMNS)
+    return f"""{common},{final_rows}
+SELECT
+    {babyid_expr} AS BabyID,
+    {output}
+FROM final_rows
+"""
+
+
+def _stage3_all_sessions_query(
+    babyid_expr: str,
+    *,
+    gap_minutes: int,
+    preg_gap_days: int,
+    last_hour_minutes: int,
+    extra_where: str = "",
+) -> str:
+    """Stage 3 side output for pretraining: every session of every pregnancy.
+
+    Rows carry the same BabyID as the supervised window (so labelled val/test pregnancies
+    can be excluded downstream), a 1-based ``session_id`` within the pregnancy and an
+    ``in_final_window`` flag for rows overlapping the supervised window. Duplicate
+    timestamps are collapsed. PatientID is deliberately not included.
+    """
+    common = _stage3_common_ctes(gap_minutes, preg_gap_days, extra_where)
+    return f"""{common},
+session_rows AS (
+    SELECT
+        s.PatientID,
+        s.Timestamp,
+        s.FHR,
+        s.toco,
+        s.Hr1_SignalQuality,
+        s.Hr1Mode,
+        s.TocoMode,
+        a.session_end,
+        a.anchor_ts,
+        DENSE_RANK() OVER (
+            PARTITION BY s.PatientID, p.pregnancy_id ORDER BY p.session_id
+        ) AS session_idx
+    FROM sessioned s
+    JOIN preg_sessions p
+      ON s.PatientID = p.PatientID AND s.session_id = p.session_id
+    JOIN pregnancy_anchors a
+      ON a.PatientID = p.PatientID AND a.pregnancy_id = p.pregnancy_id
+)
+SELECT
+    {babyid_expr} AS BabyID,
+    CAST(session_idx AS INTEGER) AS session_id,
+    Timestamp,
+    CAST(COALESCE(
+        avg(FHR) FILTER (WHERE FHR > 0 AND FHR < 255),
+        avg(FHR) FILTER (WHERE FHR > 0),
+        0
+    ) AS FLOAT) AS FHR,
+    CAST(COALESCE(avg(toco) FILTER (WHERE toco BETWEEN 1 AND 99), avg(toco), 0) AS FLOAT) AS toco,
+    COALESCE(mode(Hr1_SignalQuality), MIN(Hr1_SignalQuality)) AS Hr1_SignalQuality,
+    COALESCE(mode(Hr1Mode), MIN(Hr1Mode)) AS Hr1Mode,
+    COALESCE(mode(TocoMode), MIN(TocoMode)) AS TocoMode,
+    bool_or(
+        Timestamp BETWEEN anchor_ts - INTERVAL '{last_hour_minutes} minutes' AND anchor_ts
+    ) AS in_final_window
+FROM session_rows
+GROUP BY PatientID, session_end, session_idx, Timestamp
+"""
 
 
 def stage4_duplicatefilter(
@@ -724,16 +989,57 @@ def stage4_duplicatefilter(
     for stale in output_path.parent.glob(f"{prefix}*.parquet"):
         stale.unlink()
 
-    query = f"""
+    query = _stage4_query(dup_threshold)
+
+    total = len(input_files)
+    for idx, in_file in enumerate(input_files, start=1):
+        out_file = output_path.parent / f"{prefix}_{idx - 1:04d}.parquet"
+        con = duckdb.connect()
+        if show_progress:
+            try:
+                con.execute("PRAGMA enable_progress_bar")
+                con.execute("PRAGMA progress_bar_time=5")
+            except Exception:
+                pass
+        try:
+            con.execute("SET preserve_insertion_order=false")
+        except Exception:
+            pass
+
+        try:
+            con.execute(f"CREATE VIEW ctg AS SELECT * FROM {_duckdb_read_parquet_sql(in_file)}")
+            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_file)])
+        finally:
+            con.close()
+        print(f"Stage4: {idx}/{total} buckets -> {out_file.name}")
+
+
+def _stage4_query(dup_threshold: float) -> str:
+    """Stage 4 SQL over a view ``ctg`` with the Stage 3 columns.
+
+    Duplicate timestamps come from two sources: the same signal exported twice (identical
+    FHR/toco, harmless) and genuinely conflicting rows for the same second (two registrations
+    or two monitors). Only the *conflicting* share counts towards ``dup_threshold``; exact
+    duplicates are simply collapsed. Counting exact duplicates as well previously dropped a
+    third of all pregnancies.
+    """
+    return f"""
     WITH ts_counts AS (
-        SELECT BabyID, Timestamp, COUNT(*) AS cnt
+        SELECT
+            BabyID,
+            Timestamp,
+            COUNT(DISTINCT (
+                COALESCE(FHR, -1),
+                COALESCE(toco, -1),
+                COALESCE(CAST(Hr1_SignalQuality AS VARCHAR), '')
+            )) AS distinct_cnt
         FROM ctg
         GROUP BY BabyID, Timestamp
     ),
     per_baby AS (
         SELECT
             BabyID,
-            SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_ts,
+            SUM(CASE WHEN distinct_cnt > 1 THEN 1 ELSE 0 END) AS conflict_ts,
             COUNT(*) AS total_ts
         FROM ts_counts
         GROUP BY BabyID
@@ -741,7 +1047,8 @@ def stage4_duplicatefilter(
     keep_baby AS (
         SELECT BabyID
         FROM per_baby
-        WHERE CASE WHEN total_ts = 0 THEN 0 ELSE dup_ts * 1.0 / total_ts END <= {dup_threshold}
+        WHERE CASE WHEN total_ts = 0 THEN 0 ELSE conflict_ts * 1.0 / total_ts END
+            <= {dup_threshold}
     ),
     filtered AS (
         SELECT c.*
@@ -799,28 +1106,6 @@ def stage4_duplicatefilter(
     )
     SELECT * FROM agg
     """
-
-    total = len(input_files)
-    for idx, in_file in enumerate(input_files, start=1):
-        out_file = output_path.parent / f"{prefix}_{idx - 1:04d}.parquet"
-        con = duckdb.connect()
-        if show_progress:
-            try:
-                con.execute("PRAGMA enable_progress_bar")
-                con.execute("PRAGMA progress_bar_time=5")
-            except Exception:
-                pass
-        try:
-            con.execute("SET preserve_insertion_order=false")
-        except Exception:
-            pass
-
-        try:
-            con.execute(f"CREATE VIEW ctg AS SELECT * FROM {_duckdb_read_parquet_sql(in_file)}")
-            con.execute("COPY (" + query + ") TO ? (FORMAT PARQUET)", [str(out_file)])
-        finally:
-            con.close()
-        print(f"Stage4: {idx}/{total} buckets -> {out_file.name}")
 
 
 def stage5_qualityfilter(
@@ -977,6 +1262,7 @@ def stage6_partitioning(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _clear_parquet_outputs(output_dir, "Stage6")
     ds.write_dataset(
         batch_iter(),
         output_dir,
@@ -1153,6 +1439,28 @@ def main() -> None:
         help="Stage3: process a single bucket index (0..bucket-count-1).",
     )
     parser.add_argument(
+        "--stage3-window-scope",
+        type=str,
+        choices=list(STAGE3_WINDOW_SCOPES),
+        default=DEFAULT_STAGE3_WINDOW_SCOPE,
+        help=(
+            "Stage3: anchor the final window on the last non-zero FHR of the whole pregnancy "
+            "('pregnancy', default) or only of its last session ('final_session', legacy)."
+        ),
+    )
+    parser.add_argument(
+        "--stage3-all-sessions-out",
+        type=str,
+        nargs="?",
+        const=DEFAULT_STAGE3_ALL_SESSIONS_DIR,
+        default=None,
+        help=(
+            "Stage3: also write every session of every pregnancy (BabyID, no PatientID) "
+            "for self-supervised pretraining. Optional directory argument; defaults to "
+            f"{DEFAULT_STAGE3_ALL_SESSIONS_DIR} when given without a value."
+        ),
+    )
+    parser.add_argument(
         "--no-stage3-prebucket",
         action="store_true",
         help=(
@@ -1195,6 +1503,8 @@ def main() -> None:
             bucket_count=args.bucket_count,
             bucket_index=args.bucket_index,
             prebucket=not args.no_stage3_prebucket,
+            window_scope=args.stage3_window_scope,
+            all_sessions_output=args.stage3_all_sessions_out,
         )
         return
 

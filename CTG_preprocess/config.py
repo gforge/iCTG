@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-# Default paths and settings. Edit these on the server instead of main.py.
+import os
 
-# CSV with patient metadata.
-DEFAULT_PATIENT_CSV = "/home/lukas-uggla/Documents/Data/gravniva.csv"
+# Default paths and settings. The defaults point at the shared server layout under
+# /srv/data/input/iCTG; override any of them with the environment variables named below
+# (e.g. on a workstation with a local copy) instead of editing this file.
+
+# CSV with patient metadata (gravniva.csv).
+DEFAULT_PATIENT_CSV = os.environ.get(
+    "CTG_PATIENT_CSV", "/srv/data/input/iCTG/registry/gravniva.csv"
+)
 # SNQ registry data (Excel or CSV).
-DEFAULT_SNQ_FILE = "/home/lukas-uggla/Documents/Data/SNQ data.xlsx"
+DEFAULT_SNQ_FILE = os.environ.get("CTG_SNQ_FILE", "/srv/data/input/iCTG/registry/SNQ data.xlsx")
 # Root directory for staged data reduction outputs.
-DEFAULT_REDUCTION_ROOT = "/home/lukas-uggla/Documents/Data/ctg-data-reduction"
-# Raw CTG parquet input directory. Stage 1 reads every parquet file found here.
-DEFAULT_STAGE0_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_0_raw"
+DEFAULT_REDUCTION_ROOT = os.environ.get(
+    "CTG_REDUCTION_ROOT", "/srv/data/input/iCTG/processed/reduction"
+)
+# Raw CTG parquet input directory (converter output). Stage 1 reads every parquet file here.
+DEFAULT_STAGE0_DIR = os.environ.get("CTG_STAGE0_DIR", "/srv/data/input/iCTG/parquet")
 # Stage directories (derived from DEFAULT_REDUCTION_ROOT).
 DEFAULT_STAGE1_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_1_timefilter"
 DEFAULT_STAGE2_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_2_columnfilter"
@@ -37,6 +45,14 @@ DEFAULT_STAGE3_OUTPUT_FILE = f"{DEFAULT_STAGE3_DIR}/stage3_sessions.parquet"
 DEFAULT_STAGE3_GAP_MINUTES = 5
 DEFAULT_STAGE3_PREG_GAP_DAYS = 200
 DEFAULT_STAGE3_LAST_HOUR_MINUTES = 60
+# How the final window is anchored:
+#   "pregnancy"     - last non-zero FHR across ALL sessions of the pregnancy; the window may
+#                     span several sessions (transfers to theatre etc. no longer lose the labour).
+#   "final_session" - legacy behaviour: only rows from the last session are considered.
+DEFAULT_STAGE3_WINDOW_SCOPE = "pregnancy"
+# Optional Stage 3 side output with ALL sessions of every pregnancy (no PatientID), used
+# for self-supervised pretraining. Written only when --stage3-all-sessions-out is given.
+DEFAULT_STAGE3_ALL_SESSIONS_DIR = f"{DEFAULT_STAGE3_DIR}/all_sessions"
 DEFAULT_BABYID_SALT = "VibeSaltTemp123"
 
 # Progress report frequency (patients). Set to 0 to disable.

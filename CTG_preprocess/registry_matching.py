@@ -20,6 +20,46 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+# Stage 7 match uniqueness. A registry birth row must map to exactly one BabyID and a
+# BabyID must map to exactly one registry row; twins/multiples share the mother's CTG and
+# are therefore excluded rather than duplicated (they need their own handling).
+MULTI_BABY_REGISTRY_ROWS_SQL = """
+SELECT COUNT(*) FROM (
+    SELECT reg_row
+    FROM matches
+    GROUP BY reg_row
+    HAVING COUNT(*) > 1
+)
+"""
+
+MULTI_REGISTRY_BABIES_SQL = """
+SELECT COUNT(*) FROM (
+    SELECT BabyID
+    FROM matches
+    GROUP BY BabyID
+    HAVING COUNT(*) > 1
+)
+"""
+
+UNIQUE_MATCHES_SQL = """
+WITH per_row AS (
+    SELECT reg_row, COUNT(*) AS cnt
+    FROM matches
+    GROUP BY reg_row
+),
+per_baby AS (
+    SELECT BabyID, COUNT(*) AS cnt
+    FROM matches
+    GROUP BY BabyID
+)
+SELECT m.*
+FROM matches m
+JOIN per_row r USING (reg_row)
+JOIN per_baby b USING (BabyID)
+WHERE r.cnt = 1 AND b.cnt = 1
+"""
+
+
 def _count(con: duckdb.DuckDBPyConnection, sql: str) -> int:
     """Run a single-value aggregate query (e.g. ``COUNT(*)``) and return it as an int."""
     row = con.execute(sql).fetchone()
@@ -137,49 +177,29 @@ def _load_snq_view(con: duckdb.DuckDBPyConnection, snq_file: Path) -> None:
     raise ValueError(f"Unsupported SNQ file type: {snq_file.suffix}")
 
 
-def registry_match(
-    registry_csv: str | Path,
-    snq_file: str | Path,
-    stage5_5_file: str | Path,
-    stage6_dir: str | Path,
-    registry_out: str | Path,
-    ctg_out: str | Path,
-    show_progress: bool = True,
-) -> None:
-    registry_csv = Path(registry_csv)
-    snq_file = Path(snq_file)
-    stage5_5_file = Path(stage5_5_file)
-    stage6_dir = Path(stage6_dir)
-    registry_out = Path(registry_out)
-    ctg_out = Path(ctg_out)
+REG_DEFAULT_ROW_FILTER_SQL = "personnummer_mor IS NOT NULL"
 
-    _ensure_parent(registry_out)
-    _ensure_parent(ctg_out)
 
-    con = duckdb.connect()
-    if show_progress:
-        try:
-            con.execute("PRAGMA enable_progress_bar")
-            con.execute("PRAGMA progress_bar_time=5")
-        except Exception:
-            pass
-    try:
-        con.execute("SET preserve_insertion_order=false")
-    except Exception:
-        pass
-
+def _create_reg_raw_view(con: duckdb.DuckDBPyConnection, registry_csv: Path) -> None:
+    """Expose the semicolon-delimited registry CSV as the ``reg_raw`` view."""
     safe_registry = str(registry_csv).replace("'", "''")
-    safe_stage5_5 = str(stage5_5_file).replace("'", "''")
-    safe_stage6 = str(stage6_dir).replace("'", "''")
-
     con.execute(
         f"""
         CREATE VIEW reg_raw AS
         SELECT * FROM read_csv_auto('{safe_registry}', delim=';', header=true)
         """
     )
-    _load_snq_view(con, snq_file)
 
+
+def _create_reg_table(
+    con: duckdb.DuckDBPyConnection,
+    row_filter_sql: str = REG_DEFAULT_ROW_FILTER_SQL,
+) -> None:
+    """Build the typed ``reg`` temp table (one row per registry birth row) from ``reg_raw``.
+
+    ``row_filter_sql`` is the WHERE clause applied to ``reg_raw``; the default drops rows
+    without a maternal personnummer, exactly as Stage 7 always has.
+    """
     smoke_pre = _clean_text_expr("tobak_3_manader_fore_graviditet")
     smoke_inskrivning = _clean_text_expr("tobak_inskrivning")
     smoke_w30 = _clean_text_expr("tobak_vecka_30_32")
@@ -229,12 +249,6 @@ def registry_match(
         f"{_has_value_expr('intubation_min')} OR "
         f"{_has_value_expr('hjartmassage_min')})"
     )
-
-    snq_glopnr = _normalized_glopnr_expr("glopnr")
-    snq_highest_hie = _int_expr('"Högst HIE"')
-    snq_hie = _bool_ja_nej_expr('"HIE"')
-    snq_icd_col = '"ICD_kod"'
-    snq_kva_col = '"KVÅ_kod"'
 
     con.execute(
         f"""
@@ -329,38 +343,17 @@ def registry_match(
             {neonatal_anemia} AS neonatal_anemia,
             {respirator_grav} AS respiratorbehandling_gravniva
         FROM reg_raw
-        WHERE personnummer_mor IS NOT NULL
+        WHERE {row_filter_sql}
         """
     )
 
-    con.execute(
-        f"""
-        CREATE TEMP TABLE snq AS
-        WITH snq_pre AS (
-            SELECT
-                {snq_glopnr} AS glopnr,
-                {snq_highest_hie} AS highest_hie,
-                {snq_hie} AS hie,
-                {_code_prefix_expr(snq_icd_col, ["P10", "P52"], delimiter=";")} AS intracranial_haemorrhage,
-                {_code_prefix_expr(snq_icd_col, ["P90"], delimiter=";")} AS neonatal_convulsions,
-                {_code_prefix_expr(snq_icd_col, ["P23", "P36", "P392"], delimiter=";")} AS neonatal_sepsis_or_pneumonia,
-                {_code_prefix_expr(snq_kva_col, ["DG021", "DG022", "DG0002"], delimiter=";")} AS respiratorbehandling
-            FROM snq_raw
-        )
-        SELECT
-            glopnr,
-            MAX(highest_hie) AS highest_hie,
-            BOOL_OR(hie) FILTER (WHERE hie IS NOT NULL) AS hie,
-            BOOL_OR(intracranial_haemorrhage) FILTER (WHERE intracranial_haemorrhage IS NOT NULL) AS intracranial_haemorrhage,
-            BOOL_OR(neonatal_convulsions) FILTER (WHERE neonatal_convulsions IS NOT NULL) AS neonatal_convulsions,
-            BOOL_OR(neonatal_sepsis_or_pneumonia) FILTER (WHERE neonatal_sepsis_or_pneumonia IS NOT NULL) AS neonatal_sepsis_or_pneumonia,
-            BOOL_OR(respiratorbehandling) FILTER (WHERE respiratorbehandling IS NOT NULL) AS respiratorbehandling
-        FROM snq_pre
-        WHERE glopnr IS NOT NULL
-        GROUP BY glopnr
-        """
-    )
 
+def _create_reg_clean_table(con: duckdb.DuckDBPyConnection) -> None:
+    """Keep the ``reg`` rows usable for matching and derive their CTG-style ``PatientID``.
+
+    This is the single definition of which registry rows enter Stage 7 matching; the
+    match-loss report reuses it so the two cannot drift.
+    """
     con.execute(
         """
         CREATE TEMP TABLE reg_clean AS
@@ -424,6 +417,87 @@ def registry_match(
           AND birth_day IS NOT NULL
         """
     )
+
+
+def _ctg_day_match_predicate(ctg_date: str, birth_day: str) -> str:
+    """Stage 7 day rule: the CTG anchor date is the birth date or the day before it."""
+    return f"({ctg_date} = {birth_day} OR {ctg_date} = {birth_day} - INTERVAL 1 DAY)"
+
+
+def registry_match(
+    registry_csv: str | Path,
+    snq_file: str | Path,
+    stage5_5_file: str | Path,
+    stage6_dir: str | Path,
+    registry_out: str | Path,
+    ctg_out: str | Path,
+    show_progress: bool = True,
+) -> None:
+    registry_csv = Path(registry_csv)
+    snq_file = Path(snq_file)
+    stage5_5_file = Path(stage5_5_file)
+    stage6_dir = Path(stage6_dir)
+    registry_out = Path(registry_out)
+    ctg_out = Path(ctg_out)
+
+    _ensure_parent(registry_out)
+    _ensure_parent(ctg_out)
+
+    con = duckdb.connect()
+    if show_progress:
+        try:
+            con.execute("PRAGMA enable_progress_bar")
+            con.execute("PRAGMA progress_bar_time=5")
+        except Exception:
+            pass
+    try:
+        con.execute("SET preserve_insertion_order=false")
+    except Exception:
+        pass
+
+    safe_stage5_5 = str(stage5_5_file).replace("'", "''")
+    safe_stage6 = str(stage6_dir).replace("'", "''")
+
+    _create_reg_raw_view(con, registry_csv)
+    _load_snq_view(con, snq_file)
+
+    _create_reg_table(con)
+
+    snq_glopnr = _normalized_glopnr_expr("glopnr")
+    snq_highest_hie = _int_expr('"Högst HIE"')
+    snq_hie = _bool_ja_nej_expr('"HIE"')
+    snq_icd_col = '"ICD_kod"'
+    snq_kva_col = '"KVÅ_kod"'
+
+    con.execute(
+        f"""
+        CREATE TEMP TABLE snq AS
+        WITH snq_pre AS (
+            SELECT
+                {snq_glopnr} AS glopnr,
+                {snq_highest_hie} AS highest_hie,
+                {snq_hie} AS hie,
+                {_code_prefix_expr(snq_icd_col, ["P10", "P52"], delimiter=";")} AS intracranial_haemorrhage,
+                {_code_prefix_expr(snq_icd_col, ["P90"], delimiter=";")} AS neonatal_convulsions,
+                {_code_prefix_expr(snq_icd_col, ["P23", "P36", "P392"], delimiter=";")} AS neonatal_sepsis_or_pneumonia,
+                {_code_prefix_expr(snq_kva_col, ["DG021", "DG022", "DG0002"], delimiter=";")} AS respiratorbehandling
+            FROM snq_raw
+        )
+        SELECT
+            glopnr,
+            MAX(highest_hie) AS highest_hie,
+            BOOL_OR(hie) FILTER (WHERE hie IS NOT NULL) AS hie,
+            BOOL_OR(intracranial_haemorrhage) FILTER (WHERE intracranial_haemorrhage IS NOT NULL) AS intracranial_haemorrhage,
+            BOOL_OR(neonatal_convulsions) FILTER (WHERE neonatal_convulsions IS NOT NULL) AS neonatal_convulsions,
+            BOOL_OR(neonatal_sepsis_or_pneumonia) FILTER (WHERE neonatal_sepsis_or_pneumonia IS NOT NULL) AS neonatal_sepsis_or_pneumonia,
+            BOOL_OR(respiratorbehandling) FILTER (WHERE respiratorbehandling IS NOT NULL) AS respiratorbehandling
+        FROM snq_pre
+        WHERE glopnr IS NOT NULL
+        GROUP BY glopnr
+        """
+    )
+
+    _create_reg_clean_table(con)
 
     con.execute(
         """
@@ -511,7 +585,7 @@ def registry_match(
     )
 
     con.execute(
-        """
+        f"""
         CREATE TEMP TABLE matches AS
         SELECT
             r.reg_row,
@@ -575,36 +649,14 @@ def registry_match(
         FROM reg_enriched r
         JOIN map m
           ON r.PatientID = m.PatientID
-         AND (m.ctg_date = r.birth_day OR m.ctg_date = r.birth_day - INTERVAL 1 DAY)
+         AND {_ctg_day_match_predicate("m.ctg_date", "r.birth_day")}
         """
     )
 
-    multi_rows = _count(
-        con,
-        """
-        SELECT COUNT(*) FROM (
-            SELECT reg_row, COUNT(*) AS cnt
-            FROM matches
-            GROUP BY reg_row
-            HAVING COUNT(*) > 1
-        )
-        """,
-    )
+    multi_rows = _count(con, MULTI_BABY_REGISTRY_ROWS_SQL)
+    multi_babies = _count(con, MULTI_REGISTRY_BABIES_SQL)
 
-    con.execute(
-        """
-        CREATE TEMP TABLE unique_matches AS
-        WITH counted AS (
-            SELECT reg_row, COUNT(*) AS cnt
-            FROM matches
-            GROUP BY reg_row
-        )
-        SELECT m.*
-        FROM matches m
-        JOIN counted c USING (reg_row)
-        WHERE c.cnt = 1
-        """
-    )
+    con.execute(f"CREATE TEMP TABLE unique_matches AS {UNIQUE_MATCHES_SQL}")
 
     total_rows = _count(con, "SELECT COUNT(*) FROM reg_raw")
     clean_rows = _count(con, "SELECT COUNT(*) FROM reg_clean")
@@ -615,6 +667,11 @@ def registry_match(
     print(f"Matched rows: {match_rows}")
     if multi_rows:
         print(f"WARNING: {multi_rows} registry rows matched multiple BabyIDs and were dropped.")
+    if multi_babies:
+        print(
+            f"WARNING: {multi_babies} BabyIDs matched multiple registry rows "
+            "(twins/multiples or duplicate registry rows) and were dropped."
+        )
 
     con.execute(
         f"""
