@@ -164,8 +164,8 @@ def transform_tabular_inputs(df: pd.DataFrame, encoder: TabularEncoder) -> np.nd
     for col in encoder.categorical_columns:
         raw = df[col].astype("string").fillna("__MISSING__")
         raw = raw.astype(str)
-        missing = (raw == "__MISSING__").astype(np.float32).to_numpy()
-        features[:, cursor] = missing
+        cat_missing = (raw == "__MISSING__").astype(np.float32).to_numpy()
+        features[:, cursor] = cat_missing
         cursor += 1
         known_levels = encoder.categorical_levels[col]
         matched_any = np.zeros(n, dtype=bool)

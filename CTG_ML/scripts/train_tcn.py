@@ -211,7 +211,8 @@ def train_one_epoch(
     model.train()
     running_loss = 0.0
     n = 0
-    iterator = tqdm(loader, desc="train", leave=False, unit="batch") if show_progress else loader
+    pbar = tqdm(loader, desc="train", leave=False, unit="batch") if show_progress else None
+    iterator = pbar if pbar is not None else loader
     for x, y in iterator:
         x = x.to(device, non_blocking=(device.type == "cuda"))
         y = y.to(device, non_blocking=(device.type == "cuda"))
@@ -237,8 +238,8 @@ def train_one_epoch(
         batch_size = x.size(0)
         running_loss += float(loss.detach().cpu()) * batch_size
         n += batch_size
-        if show_progress:
-            iterator.set_postfix(loss=f"{running_loss / max(n, 1):.4f}")
+        if pbar is not None:
+            pbar.set_postfix(loss=f"{running_loss / max(n, 1):.4f}")
     return running_loss / max(n, 1)
 
 
@@ -332,12 +333,6 @@ def main() -> None:
     use_amp = bool(cfg.tcn.use_amp and use_cuda)
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
-    train_loader_kwargs = {
-        "dataset": train_ds,
-        "batch_size": cfg.tcn.batch_size,
-        "num_workers": 0,
-        "pin_memory": use_cuda,
-    }
     loader_generator = torch.Generator()
     loader_generator.manual_seed(cfg.tcn.seed)
     if cfg.tcn.use_balanced_batch_sampler:
@@ -368,18 +363,32 @@ def main() -> None:
                 class_weights[cls] = 1.0 / float(class_counts[cls])
         sample_weights = class_weights[train_labels]
         sampler = WeightedRandomSampler(
-            weights=torch.as_tensor(sample_weights, dtype=torch.double),
+            # WeightedRandomSampler converts this to a float64 tensor internally.
+            weights=sample_weights.tolist(),
             num_samples=len(train_ds),
             replacement=True,
             generator=loader_generator,
         )
-        train_loader = DataLoader(**train_loader_kwargs, sampler=sampler)
+        train_loader = DataLoader(
+            dataset=train_ds,
+            batch_size=cfg.tcn.batch_size,
+            num_workers=0,
+            pin_memory=use_cuda,
+            sampler=sampler,
+        )
         print(
             "Train sampler: weighted "
             f"(class_counts={class_counts.tolist()}, class_weights={class_weights.tolist()})"
         )
     else:
-        train_loader = DataLoader(**train_loader_kwargs, shuffle=True, generator=loader_generator)
+        train_loader = DataLoader(
+            dataset=train_ds,
+            batch_size=cfg.tcn.batch_size,
+            num_workers=0,
+            pin_memory=use_cuda,
+            shuffle=True,
+            generator=loader_generator,
+        )
         print("Train sampler: standard shuffle")
     val_loader = DataLoader(
         val_ds, batch_size=cfg.tcn.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda

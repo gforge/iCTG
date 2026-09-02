@@ -4,6 +4,7 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -35,6 +36,20 @@ class BinaryTarget:
     val_mask: np.ndarray
     test_y: np.ndarray
     test_mask: np.ndarray
+
+
+class TargetRunPayload(TypedDict):
+    """Per-target training result; the metric keys are present only when status == "ok"."""
+
+    target: str
+    kind: str
+    status: str
+    train_n: NotRequired[int]
+    train_positives: NotRequired[int]
+    train_prevalence: NotRequired[float]
+    scale_pos_weight: NotRequired[float]
+    val: NotRequired[dict[str, float]]
+    test: NotRequired[dict[str, float]]
 
 
 def load_split(path: Path) -> SplitData:
@@ -92,6 +107,14 @@ def raw_feature_group(feature_name: str) -> str:
     return feature_name
 
 
+def _scalar_score(scores: dict[str, float | list[float]], key: str) -> float:
+    """Booster.get_score returns per-class lists for multi-class models; we train binary ones."""
+    value = scores.get(key, 0.0)
+    if isinstance(value, list):
+        raise TypeError(f"Expected a scalar importance score for {key}, got {value!r}")
+    return float(value)
+
+
 def xgb_feature_importance(
     model: XGBClassifier,
     feature_names: list[str],
@@ -108,8 +131,8 @@ def xgb_feature_importance(
                 "target": target_name,
                 "feature": feature_name,
                 "raw_feature": raw_feature_group(feature_name),
-                "total_gain": float(total_gain.get(key, 0.0)),
-                "split_count": float(weight.get(key, 0.0)),
+                "total_gain": _scalar_score(total_gain, key),
+                "split_count": _scalar_score(weight, key),
             }
         )
     encoded = pd.DataFrame(rows).sort_values("total_gain", ascending=False)
@@ -153,7 +176,7 @@ def train_one_target(
     val: SplitData,
     test: SplitData,
     args: argparse.Namespace,
-) -> tuple[XGBClassifier | None, dict[str, object]]:
+) -> tuple[XGBClassifier | None, TargetRunPayload]:
     train_mask = target.train_mask.astype(bool)
     y_train = target.train_y[train_mask].astype(int)
     if len(y_train) == 0 or len(np.unique(y_train)) < 2:
@@ -199,7 +222,7 @@ def train_one_target(
         threshold=float(val_metrics["threshold"]),
     )
 
-    payload: dict[str, object] = {
+    payload: TargetRunPayload = {
         "target": target.name,
         "kind": target.kind,
         "status": "ok",
@@ -304,7 +327,7 @@ def main() -> None:
     for target in targets:
         print(f"\nTraining {target.name}")
         model, payload = train_one_target(target, train, val, test, args)
-        summary_row = {
+        summary_row: dict[str, object] = {
             "target": payload["target"],
             "kind": payload["kind"],
             "status": payload["status"],

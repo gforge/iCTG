@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ctg_ml.ctg2_config import load_ctg2_config
+from ctg_ml.ctg2_config import CTG2ProjectConfig, load_ctg2_config
 
 APGAR_OUTCOMES = ["apgar1_below7", "apgar5_below7", "apgar10_below7"]
 BINARY_OUTCOMES = [
@@ -68,7 +68,9 @@ def _format_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-def _default_group_specs(cfg) -> list[AblationSpec]:
+def _default_group_specs(
+    cfg: CTG2ProjectConfig,
+) -> tuple[list[AblationSpec], list[AblationSpec]]:
     grouped = [
         AblationSpec("baseline", "baseline", []),
         AblationSpec("CTG", "sequence", []),
@@ -332,7 +334,7 @@ def run_study(
         elapsed = time.time() - start
         durations.append(elapsed)
         completed += 1
-        row = {
+        raw_row: dict[str, object] = {
             "seed": seed,
             "ablation": spec.name,
             "kind": spec.kind,
@@ -340,9 +342,9 @@ def run_study(
             "metrics_json": str(metrics_out),
             "elapsed_seconds": round(elapsed, 2),
         }
-        row.update({f"{k}_roc_auc": v for k, v in roc_aucs.items()})
-        row.update({f"{k}_pr_auc": v for k, v in pr_aucs.items()})
-        raw_rows.append(row)
+        raw_row.update({f"{k}_roc_auc": v for k, v in roc_aucs.items()})
+        raw_row.update({f"{k}_pr_auc": v for k, v in pr_aucs.items()})
+        raw_rows.append(raw_row)
         avg = sum(durations) / len(durations)
         remaining = (
             _format_duration(avg * (total_runs - completed)) if completed < total_runs else "0s"
@@ -358,6 +360,8 @@ def run_study(
     for _, row in raw_df.iterrows():
         seed = int(row["seed"])
         baseline = baseline_df.loc[seed]
+        if not isinstance(baseline, pd.Series):
+            raise ValueError(f"Expected exactly one baseline run for seed {seed}")
         out = {
             "seed": seed,
             "ablation": row["ablation"],

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -20,16 +21,27 @@ from ctg_ml.models import MultimodalMultitaskTCN
 from ctg_ml.multimodal_config import load_multimodal_config
 
 
-def load_npz_metadata(path: Path) -> dict[str, object]:
+@dataclass
+class NpzMetadata:
+    sequence_channels: list[str]
+    tabular_feature_names: list[str]
+    apgar_target_names: list[str]
+    binary_target_names: list[str]
+    categorical_class_counts: list[int]
+    num_regression_outputs: int
+    embedding_dim: int = 0
+
+
+def load_npz_metadata(path: Path) -> NpzMetadata:
     data = np.load(path, allow_pickle=False)
-    return {
-        "sequence_channels": [str(x) for x in data["sequence_channels"].tolist()],
-        "tabular_feature_names": [str(x) for x in data["tabular_feature_names"].tolist()],
-        "apgar_target_names": [str(x) for x in data["apgar_target_names"].tolist()],
-        "binary_target_names": [str(x) for x in data["binary_target_names"].tolist()],
-        "categorical_class_counts": [int(x) for x in data["categorical_class_counts"].tolist()],
-        "num_regression_outputs": int(len(data["regression_target_names"])),
-    }
+    return NpzMetadata(
+        sequence_channels=[str(x) for x in data["sequence_channels"].tolist()],
+        tabular_feature_names=[str(x) for x in data["tabular_feature_names"].tolist()],
+        apgar_target_names=[str(x) for x in data["apgar_target_names"].tolist()],
+        binary_target_names=[str(x) for x in data["binary_target_names"].tolist()],
+        categorical_class_counts=[int(x) for x in data["categorical_class_counts"].tolist()],
+        num_regression_outputs=int(len(data["regression_target_names"])),
+    )
 
 
 def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarray) -> None:
@@ -48,23 +60,23 @@ def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarr
 def load_model(
     checkpoint_path: Path,
     cfg_path: str,
-    metadata: dict[str, object],
+    metadata: NpzMetadata,
     device: torch.device,
 ) -> tuple[MultimodalMultitaskTCN, dict[str, object]]:
     cfg = load_multimodal_config(cfg_path)
     state = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = MultimodalMultitaskTCN(
-        sequence_in_channels=len(metadata["sequence_channels"]),
-        tabular_in_features=len(metadata["tabular_feature_names"]),
+        sequence_in_channels=len(metadata.sequence_channels),
+        tabular_in_features=len(metadata.tabular_feature_names),
         tcn_channels=cfg.model.tcn_channels,
         kernel_size=cfg.model.kernel_size,
         dropout=cfg.model.dropout,
         tabular_hidden_dim=cfg.model.tabular_hidden_dim,
         fusion_hidden_dim=cfg.model.fusion_hidden_dim,
-        num_apgar_outputs=len(metadata["apgar_target_names"]),
-        categorical_output_dims=metadata["categorical_class_counts"],
-        num_regression_outputs=metadata["num_regression_outputs"],
-        num_binary_outputs=len(metadata["binary_target_names"]),
+        num_apgar_outputs=len(metadata.apgar_target_names),
+        categorical_output_dims=metadata.categorical_class_counts,
+        num_regression_outputs=metadata.num_regression_outputs,
+        num_binary_outputs=len(metadata.binary_target_names),
     ).to(device)
     model.load_state_dict(state["model_state_dict"])
     model.eval()
@@ -115,13 +127,13 @@ def extract_split_features(
     return X, target_arrays
 
 
-def make_feature_names(metadata: dict[str, object], mode: str) -> list[str]:
-    emb_dim = int(metadata.get("embedding_dim", 0))
+def make_feature_names(metadata: NpzMetadata, mode: str) -> list[str]:
+    emb_dim = int(metadata.embedding_dim)
     emb_names = [f"ctg_embedding_{idx:03d}" for idx in range(emb_dim)]
     if mode == "ctg_embedding":
         return emb_names
     if mode == "registry_plus_ctg_embedding":
-        return [*metadata["tabular_feature_names"], *emb_names]
+        return [*metadata.tabular_feature_names, *emb_names]
     raise ValueError(f"Unknown feature mode: {mode}")
 
 
@@ -129,7 +141,7 @@ def make_split_data(
     X: np.ndarray,
     arrays: dict[str, np.ndarray],
     feature_names: list[str],
-    metadata: dict[str, object],
+    metadata: NpzMetadata,
 ) -> SplitData:
     return SplitData(
         X_tab=X,
@@ -138,8 +150,8 @@ def make_split_data(
         y_bin=arrays["y_bin"],
         y_bin_mask=arrays["y_bin_mask"],
         tabular_feature_names=feature_names,
-        apgar_target_names=metadata["apgar_target_names"],
-        binary_target_names=metadata["binary_target_names"],
+        apgar_target_names=metadata.apgar_target_names,
+        binary_target_names=metadata.binary_target_names,
     )
 
 
@@ -173,7 +185,7 @@ def run_xgboost(
     for target in targets:
         print(f"\nTraining {target.name}")
         model, payload = train_one_target(target, train, val, test, args)
-        summary_row = {
+        summary_row: dict[str, object] = {
             "target": payload["target"],
             "kind": payload["kind"],
             "status": payload["status"],
@@ -299,14 +311,14 @@ def main() -> None:
     model, state = load_model(checkpoint, args.config, metadata, device)
     means = np.asarray(state["train_signal_means"], dtype=np.float32)
     stds = np.asarray(state["train_signal_stds"], dtype=np.float32)
-    metadata["embedding_dim"] = int(model.sequence_encoder.out_dim)
+    metadata.embedding_dim = int(model.sequence_encoder.out_dim)
     feature_names = make_feature_names(metadata, args.feature_mode)
 
     print(f"Input dir:       {input_dir}")
     print(f"Checkpoint:      {checkpoint}")
     print(f"Feature mode:    {args.feature_mode}")
     print(f"Device:          {device}")
-    print(f"Embedding dim:   {metadata['embedding_dim']}")
+    print(f"Embedding dim:   {metadata.embedding_dim}")
 
     split_features: dict[str, SplitData] = {}
     for split_name in ["train", "val", "test"]:
@@ -331,7 +343,7 @@ def main() -> None:
                 "checkpoint": str(checkpoint),
                 "feature_mode": args.feature_mode,
                 "output_dir": str(output_dir),
-                "embedding_dim": metadata["embedding_dim"],
+                "embedding_dim": metadata.embedding_dim,
                 "targets": args.targets,
                 "xgboost_seed": args.seed,
             },

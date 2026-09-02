@@ -4,6 +4,7 @@ import argparse
 import json
 import random
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
 import pandas as pd
@@ -230,6 +231,19 @@ def masked_multitask_loss(
     return total, (apgar_loss + cat_loss).detach(), reg_loss.detach(), bin_loss.detach()
 
 
+class EvalMetrics(TypedDict):
+    loss: float
+    apgar: dict[str, dict[str, float]]
+    derived_binary: dict[str, dict[str, float]]
+    categorical: dict[str, dict[str, float]]
+    regression: dict[str, dict[str, float]]
+    binary: dict[str, dict[str, float]]
+    apgar5_mae: float
+    apgar5_below7_pr_auc: float
+    mean_binary_pr_auc: float
+    monitor_binary_pr_auc: float
+
+
 @torch.no_grad()
 def evaluate_dataset(
     model: nn.Module,
@@ -245,7 +259,7 @@ def evaluate_dataset(
     regression_names: list[str],
     binary_names: list[str],
     monitor_binary_tasks: list[str],
-) -> dict[str, object]:
+) -> EvalMetrics:
     model.eval()
     total_loss = 0.0
     total_items = 0
@@ -454,7 +468,7 @@ def evaluate_dataset(
     }
 
 
-def format_eval(tag: str, metrics: dict[str, object]) -> None:
+def format_eval(tag: str, metrics: EvalMetrics) -> None:
     print(
         f"{tag}: loss={metrics['loss']:.5f} apgar5_MAE={metrics['apgar5_mae']:.4f} "
         f"apgar5<7_PR-AUC={metrics['apgar5_below7_pr_auc']:.4f} "
@@ -691,11 +705,10 @@ def main() -> None:
         model.train()
         running = 0.0
         n = 0
-        iterator = (
-            tqdm(train_loader, desc="train", leave=False, unit="batch")
-            if show_progress
-            else train_loader
+        pbar = (
+            tqdm(train_loader, desc="train", leave=False, unit="batch") if show_progress else None
         )
+        iterator = pbar if pbar is not None else train_loader
         for batch in iterator:
             (
                 x_seq,
@@ -764,8 +777,8 @@ def main() -> None:
             bs = x_seq.size(0)
             running += float(loss.detach().cpu()) * bs
             n += bs
-            if show_progress:
-                iterator.set_postfix(
+            if pbar is not None:
+                pbar.set_postfix(
                     loss=f"{running / max(n, 1):.4f}",
                     apgar=f"{float(apgar_loss):.4f}",
                     reg=f"{float(reg_loss):.4f}",
