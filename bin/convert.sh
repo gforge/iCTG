@@ -82,6 +82,7 @@ if [ -z "${TMUX:-}" ]; then
     fi
 fi
 
-# Execute the converter from the repository root so the installed `ictg` package is used
-cd "$(dirname "$0")/.."
-uv run python -m ictg.convert.main "$@"
+# Run inside the repository's uv project without changing the working directory,
+# so relative input globs and --parquet-out paths keep working from wherever this is called.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+uv run --project "$REPO_ROOT" python -m ictg.convert.main "$@"
