@@ -55,6 +55,10 @@ DEFAULT_STAGE6_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_6_partitioned"
 DEFAULT_STAGE7_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_7_registrymatching"
 DEFAULT_STAGE7_REGISTRY_CSV = f"{DEFAULT_STAGE7_DIR}/registry.csv"
 DEFAULT_STAGE7_CTG_PARQUET = f"{DEFAULT_STAGE7_DIR}/ctg_final.parquet"
+# Anonymized long tables (BabyID, day_offset relative to birth, code), one row per code.
+DEFAULT_STAGE7_MOTHER_DIAG_CSV = f"{DEFAULT_STAGE7_DIR}/mother_diagnoses.csv"
+DEFAULT_STAGE7_CHILD_DIAG_CSV = f"{DEFAULT_STAGE7_DIR}/child_diagnoses.csv"
+DEFAULT_STAGE7_CHILD_PROC_CSV = f"{DEFAULT_STAGE7_DIR}/child_procedures.csv"
 
 DEFAULT_STAGE3_OUTPUT_FILE = f"{DEFAULT_STAGE3_DIR}/stage3_sessions.parquet"
 
