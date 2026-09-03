@@ -44,6 +44,12 @@ input_boolean = [
   "heavy_vaginal_bleeding_before_or_during_delivery",
   "labor_dystocia",
   "use_of_oxytocin",
+  # stage 7 (September 2026) additions known before/at admission
+  "induced_labour",
+  "epidural",
+  "ctg_admission_test_abnormal",
+  "ivf_graviditet",
+  "kronisk_hypertoni",
 ]
 input_categorical = [
   "forlossningsstart",
@@ -67,13 +73,33 @@ binary_outputs = [
   "neonatal_sepsis_or_pneumonia",
   "neonatal_anemia",
   "respiratorbehandling",
+  # stage 7 (September 2026) outcomes, see CTG_preprocess/stage7_registry_data_dictionary.md
+  "severe_neonatal_outcome",
+  "metabolic_acidosis",
+  "ph_navel_below705",
+  "birth_asphyxia_any",
+  "neonatal_care_admission",
+  "hie",
+  "snq_hypothermia_treatment",
+  "fetal_distress_in_labour",
+  "emergency_c_section",
 ]
+# Outcomes whose missing value means "did not happen": code-derived flags are never missing,
+# and the SNQ variables are missing exactly when the child was not admitted to neonatal
+# care (neonatal_care_admission = false). Cord-gas outcomes stay missing-aware.
 binary_outputs_missing_as_false = [
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
   "neonatal_sepsis_or_pneumonia",
   "neonatal_anemia",
   "respiratorbehandling",
+  "severe_neonatal_outcome",
+  "birth_asphyxia_any",
+  "neonatal_care_admission",
+  "hie",
+  "snq_hypothermia_treatment",
+  "fetal_distress_in_labour",
+  "emergency_c_section",
 ]
 
 [model]
@@ -100,6 +126,9 @@ deterministic = false
 monitor_binary_tasks = [
   "apgar1_below7",
   "apgar5_below7",
+  "severe_neonatal_outcome",
+  "metabolic_acidosis",
+  "neonatal_care_admission",
   "shoulder_dystocia",
   "treatment_for_hypoglycemia",
   "neonatal_anemia",
