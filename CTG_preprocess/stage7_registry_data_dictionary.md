@@ -8,9 +8,11 @@ The Stage 7 output consists of one row per matched pregnancy/child episode. Matc
 
 In the descriptions below:
 
-- `gravniva.csv` refers to the main obstetric registry source.
-- `SNQ data.xlsx` refers to the supplementary neonatal intensive care registry source.
+- `gravniva.csv` refers to the main obstetric registry source (Swedish Pregnancy Register, SPR export; one row per live-born singleton, births 2015-2022).
+- `fv1_moderns_diagnoser.csv`, `barn_barnets_diagnoser_forsta_28_dagarna.csv` and `barn_barnets_atgarder_forsta_28_dagarna.csv` are the dated SPR long tables (one row per ICD-10/KVÅ code). Their codes are unioned with the collapsed `*_rad` code strings of `gravniva.csv` before any code flag below is derived, and they are exported anonymized (see "Anonymized long tables").
+- `SNQ data.xlsx` refers to the supplementary neonatal intensive care registry source (Swedish Neonatal Quality Register; one row per child admitted to neonatal care).
 - Variables marked as derived are calculated from one or more raw source variables rather than copied directly.
+- Prevalences quoted below come from the first (2025) cohort; new variables say "see cohort report". `cohort_report.py` recomputes them after every pipeline run.
 
 ## Identifier
 
@@ -349,12 +351,12 @@ The following variables are derived from comma-separated code lists in `gravniva
 
 ### `placental_abruption`
 - Type: boolean
-- Source: `gravniva.csv`
+- Source: `gravniva.csv` (+ `fv1_moderns_diagnoser.csv`)
 - Raw variable: `moderns_diagnoser_rad`
-- Description: Placental abruption indicator.
-- Derivation: Implemented as requested using exact code `O711`.
+- Description: Placental abruption (abruptio placentae) indicator.
+- Derivation: Set to `True` if any maternal diagnosis code starts with `O45`. (Before September 2026 this used the exact code `O711`, which is uterine rupture during labour, so the old column measured uterine rupture rather than abruption; `uterine_rupture` still covers `O711`.)
 - ML-use: Not used, due to too few True samples
-- Prevalance: 0.14%
+- Prevalance: see cohort report
 
 ### `heavy_vaginal_bleeding_before_or_during_delivery`
 - Type: boolean
@@ -509,7 +511,146 @@ These missing values should be handled explicitly in downstream statistical anal
 
 ## Notes on code parsing
 
-- In `gravniva.csv`, diagnosis and intervention code fields are treated as comma-separated lists.
+- In `gravniva.csv`, diagnosis and intervention code fields are treated as comma-separated lists; the long-table codes are appended to the same list.
 - In `SNQ data.xlsx`, code fields are treated as semicolon-separated lists.
+- Codes are upper-cased and whitespace and dots are removed before matching (`O14.1` and `O141` are the same code).
 - Prefix matching is used where specified, meaning that broader codes such as `O13` match more specific codes beginning with `O13`.
 - Exact matching is used where a precise code was explicitly requested.
+- If a source column is missing from an export, the derived variable is written as missing and a warning is printed; Stage 7 does not fail.
+
+## Delivery mode, labour course and neonatal condition (added September 2026)
+
+All from `gravniva.csv` unless stated. Booleans derived from `Ja`/`Nej` fields are missing when the field is empty or `us`/`Vet ej`. "Seconds before birth" variables are `birth_timestamp - event timestamp` (positive when the event precedes the birth, negative after), computed from the date and time-of-day fields of the event.
+
+| Variable | Type | Raw variable(s) | Description / derivation |
+|---|---|---|---|
+| `emergency_c_section` | boolean | `forlossningsslut_basta_skattning` | `Akut kejsarsnitt` |
+| `planned_c_section` | boolean | `forlossningsslut_basta_skattning` | `Planerat kejsarsnitt` |
+| `instrumental_vaginal_delivery` | boolean | `forlossningsslut_basta_skattning` | `Instrumentell vaginal förlossning` (vacuum/forceps) |
+| `c_section_urgency` | text | `indikation` | `Urakut` / `Akut` / `Elektiv`; missing for vaginal births |
+| `induced_labour` | boolean | `forlossningsstart_basta_skattning` | `Induktion` |
+| `oxytocin_under_forlossning` | boolean | `oxytocin_under_forlossning` | registry field, only recorded for induced labours; see `use_of_oxytocin` for the procedure-code version |
+| `epidural` | boolean | `smartlindring_epidural` | recorded for a subset of births only |
+| `presentation` | text | `presentation` | fetal presentation |
+| `breech_presentation` | boolean | `presentation` | `Sätes- eller fotbjudning` |
+| `robsongrupp` | text | `robsongrupp` | Robson ten-group classification |
+| `labour_onset_seconds_before_birth` | integer | `varkar_borjade_datum/tid` | onset of contractions |
+| `membrane_rupture_seconds_before_birth` | integer | `vattenavgang_datum/tid` | rupture of membranes |
+| `amniotomy_seconds_before_birth` | integer | `amniotomi_datum/tid` | amniotomy |
+| `second_stage_seconds_before_birth` | integer | `krystvarkar_datum/tid` | start of pushing (second stage) |
+| `c_section_start_seconds_before_birth` | integer | `sectio_start_datum/tid` | start of caesarean section |
+| `c_section_duration_seconds` | integer | `sectio_start/slut` | caesarean duration |
+| `total_blodning_ml` | integer | `total_blodning_ml` | total maternal blood loss (ml) |
+| `ctg_intagningstest` | text | `ctg_intagningstest` | admission CTG classification as recorded in the registry: `Normal` / `Ej normal` / `Ej utförd` |
+| `ctg_admission_test_abnormal` | boolean | `ctg_intagningstest` | `Ej normal` = True, `Normal` = False, otherwise missing |
+| `ivf_graviditet` | boolean | `ivf_graviditet` | IVF pregnancy |
+| `kronisk_hypertoni` | boolean | `kronisk_hypertoni` | chronic hypertension |
+| `graviditetsdiabetes_diagnos` | boolean | `diagnosen_graviditetsdiabetes_stalld` | any `Ja...` = True, `Nej` = False, `Vet ej` missing |
+| `birth_weight_g` | integer | `fodelsevikt_g` | birth weight |
+| `birth_weight_deviation_perc` | float | `vikt_avvikelse_perc` | deviation from expected weight (%) |
+| `be_navelartar`, `be_navelven` | float | `be_navel*_mmol_l` | cord base excess (mmol/l) |
+| `pco2_navelartar`, `po2_navelartar` | float | `pco2/po2_navelartar_kpa` | cord arterial gases (kPa) |
+| `ph_navel_below705` | boolean | `ph_navelartar`, `ph_navelven` | arterial pH < 7.05 when available, else venous |
+| `metabolic_acidosis` | boolean | `ph_navelartar`, `be_navelartar_mmol_l` | arterial pH < 7.05 and BE <= -12; missing unless both are recorded |
+| `apgar5_below7`, `apgar10_below7` | boolean | `apgar_5_min`, `apgar_10_min` | Apgar < 7 |
+| `ventilation_pa_mask_min`, `intubation_min`, `hjartmassage_min` | integer | same | minutes of mask ventilation / intubation / chest compressions at birth (missing = none recorded) |
+| `acidoskorrektion` | boolean | `acidoskorrektion` | acidosis correction given |
+| `respiratorbehandling_gravniva` | boolean | the three `*_min` fields | any resuscitation minutes recorded |
+| `discharged_home` | boolean | `utskriven_till_hemmet` | |
+| `days_to_discharge` | integer | `utskrivning_datum` | days from birth to maternal discharge |
+
+## Additional maternal diagnosis flags (ICD-10, gravniva + long table)
+
+Prefix matches on the maternal diagnosis codes unless noted.
+
+| Variable | Codes | Meaning |
+|---|---|---|
+| `fetal_distress_in_labour` | O68 | labour and delivery complicated by fetal stress (distress) |
+| `maternal_care_for_fetal_problems` | O36 | maternal care for known or suspected fetal problems |
+| `signs_of_fetal_hypoxia_antenatal` | O363 | maternal care for signs of fetal hypoxia |
+| `fetal_growth_restriction` | O365 | maternal care for poor fetal growth |
+| `chorioamnionitis` | O411 | infection of the amniotic sac |
+| `oligohydramnios` | O410 | |
+| `polyhydramnios` | O40 | |
+| `prelabour_rupture_of_membranes` | O42 | |
+| `preterm_labour` | O60 | |
+| `prolonged_pregnancy` | O48 | |
+| `failed_induction` | O61 | |
+| `prolonged_labour` | O63 | |
+| `obstructed_labour` | O64, O65, O66 | malposition, pelvic abnormality, other obstruction (O66 includes shoulder dystocia) |
+| `umbilical_cord_complications` | O69 | |
+| `hypertensive_disorder_any` | O10-O16 | any hypertensive disorder of pregnancy |
+| `placenta_previa` | O44 | |
+| `postpartum_haemorrhage` | O72 | |
+| `intrapartum_fever` | O752 | pyrexia during labour |
+
+## Additional child diagnosis flags (ICD-10, first 28 days)
+
+| Variable | Codes | Meaning |
+|---|---|---|
+| `intrauterine_hypoxia` | P20 | |
+| `birth_asphyxia_any` | P21 | any birth asphyxia (P210 severe, P211 mild/moderate, P219 unspecified) |
+| `mild_or_moderate_birth_asphyxia` | P211 | |
+| `respiratory_distress_newborn` | P22 | |
+| `neonatal_aspiration_syndromes` | P24 | includes meconium aspiration P240 |
+| `neonatal_convulsions_icd` | P90 | from SPR codes (compare `neonatal_convulsions`, from SNQ codes) |
+| `hie_icd` | P916 | hypoxic-ischaemic encephalopathy (compare `hie` from SNQ) |
+| `cerebral_disturbance_newborn` | P91 | other disturbances of cerebral status of newborn |
+| `intracranial_haemorrhage_icd` | P10, P52 | compare `intracranial_haemorrhage` from SNQ codes |
+| `neonatal_infection_icd` | P23, P36, P39 | congenital pneumonia, bacterial sepsis, other infections |
+| `neonatal_hypoglycaemia_icd` | P70 | |
+| `birth_injury` | P10-P15 | |
+| `congenital_malformation` | Q | any malformation code; mainly for exclusion |
+
+## SNQ variables added September 2026
+
+All from `SNQ data.xlsx`, joined on `glopnr`. Missing for every child not admitted to neonatal care. `Ja`/`Nej` fields become booleans; `us` becomes missing. Column names in the export are given as raw variables.
+
+| Variable | Type | Raw variable | Notes |
+|---|---|---|---|
+| `neonatal_care_admission` | boolean | presence of an SNQ row | True/False for every matched child (False = no SNQ record). SNQ covers essentially all Swedish neonatal units, so this approximates admission to neonatal care |
+| `snq_hypothermia_treatment` | boolean | `Behandlad med hypotermi` | therapeutic hypothermia (cooling) |
+| `snq_seizures` | boolean | `Kramper` | |
+| `snq_antiepileptic_treatment` | boolean | `AntiEp_beh under vtf` | |
+| `snq_eeg_monitoring` | boolean | `EEG/aEEG övervakning` | |
+| `snq_cns_haemorrhage` | boolean | `CNS - blödning` | |
+| `snq_cns_infarct` | boolean | `Fokal/multifokal CNS infarkt` | |
+| `snq_pvl` | boolean | `PVL (med cystor)` | periventricular leukomalacia |
+| `snq_highest_ivh` | integer | `Högst IVH` | 0-4 (grade); `88 Ej undersökt` = missing |
+| `snq_resuscitation` | boolean | `HLR-åtgärder` | `1`/`2` = True, `0 Nej (vitalt barn)` = False, palliation/`us` missing |
+| `snq_resuscitation_over_10min` | boolean | `HLR-åtgärder` | `2 Ja (>= 10 min)` |
+| `snq_hlr_extra_oxygen`, `snq_hlr_ventilation_mask`, `snq_hlr_cpap`, `snq_hlr_intubation`, `snq_hlr_chest_compressions`, `snq_hlr_adrenaline` | boolean | `HLR_*` | individual resuscitation measures |
+| `snq_cpap`, `snq_high_flow` | boolean | `CPAP`, `Högflödesgrimma` | respiratory support during care |
+| `snq_ventilator_conventional`, `snq_ventilator_hfv`, `snq_ventilator_nava` | boolean | `Resp konv`, `Resp HFV`, `Resp NAVA` | mechanical ventilation modes |
+| `snq_nas`, `snq_pas` | boolean | `NAS`, `PAS` | SNQ respiratory diagnoses as labelled in the export (neonatal respiratory disturbance / pulmonary adaptation disturbance); consult the SNQ manual before use |
+| `snq_mas`, `snq_rds`, `snq_pphn`, `snq_pneumothorax`, `snq_bpd` | boolean | same | meconium aspiration, RDS, persistent pulmonary hypertension, pneumothorax, bronchopulmonary dysplasia |
+| `snq_infection` | boolean | `Barn med infektion` | |
+| `snq_early_culture_verified_sepsis` | boolean | `Tidig bakt. sepsis, odlingsverif. (antal)` | count > 0 |
+| `snq_hypoglycaemia` | boolean | `Hypoglukemi (<2,6 efter 3 tim)` | |
+| `snq_inotropic_support` | boolean | `Inotroptstöd` | |
+| `snq_erythrocyte_transfusion` | boolean | `EryTransf` | |
+| `snq_malformation_or_chromosomal` | boolean | `Missb./kromosom avv.` | |
+| `snq_died` | boolean | `Avliden enl. SNQ` | death during neonatal care |
+| `snq_age_at_death_days` | integer | `Ålder vid dödsfall SNQ (dagar)` | |
+| `snq_death_cause_perinatal_asphyxia` | boolean | `Dödors_Perinatal asfyxi` | only filled for deaths |
+| `snq_died_death_register` | boolean | `Avliden enl. DOR` | death per the national cause-of-death register; only `Ja` is recorded, so False never occurs |
+| `snq_admission_age_days` | integer | `1:a inskrivning, ålder (dagar)` | age at first admission |
+| `snq_admissions` | integer | `Antal Vtf` | number of care episodes |
+| `snq_care_days_inpatient`, `snq_care_days_neonatal` | integer | `Vårdtid, inneliggande`, `Vårdtid, neonatologi` | |
+| `snq_apgar1`, `snq_apgar5`, `snq_apgar10` | integer | `Apgar1m/5m/10m` | SNQ's own Apgar record |
+| `snq_ph_navelartar`, `snq_be_navelartar`, `snq_ph_navelven`, `snq_be_navelven` | float | `Artär pH/BE`, `Ven pH/BE` | cord gases as recorded by SNQ |
+| `snq_postnatal_ph`, `snq_postnatal_be` | float | `Post pH`, `Post BE` | first postnatal blood gas |
+| `snq_gestational_weeks`, `snq_birth_weight_g`, `snq_birth_weight_zscore` | numeric | `Grav.längd (v)`, `Födelsevikt`, `ZScore` | |
+| `snq_iugr`, `snq_preeclampsia`, `snq_chorioamnionitis`, `snq_abruption_or_bleeding` | boolean | `Intrauterin tillväxthämning`, `Preeklampsi/Eklampsi`, `Amnionit`, `Ablatio/Blödning` | maternal conditions as recorded by SNQ |
+
+## Composite outcome
+
+### `severe_neonatal_outcome`
+- Type: boolean (never missing for matched rows)
+- Source: derived
+- Derivation: True if any of: `apgar5 < 7`; arterial cord pH < 7.00; `metabolic_acidosis`; `hie_icd`; `severe_birth_asphyxia`; neonatal death (`died_after_days` recorded); `intubation_min` recorded; SNQ `hie`; `snq_hypothermia_treatment`; `snq_seizures`; SNQ `neonatal_convulsions`; `snq_died`; `snq_resuscitation_over_10min`; `snq_hlr_intubation`. SNQ components missing because the child was not admitted count as False.
+- ML-use: intended primary output for intrapartum-hypoxia models; the components are available separately for ablations.
+
+## Anonymized long tables
+
+`mother_diagnoses.csv`, `child_diagnoses.csv` and `child_procedures.csv` hold the dated SPR long tables restricted to matched babies, with columns `BabyID`, `day_offset` (days from birth; negative = before birth) and `code` (ICD-10-SE diagnosis or KVÅ procedure code, as exported). Maternal diagnoses belong to the same pregnancy (`glopnr` is pregnancy-specific), so a negative offset means an antenatal diagnosis and 0 or -1 a diagnosis recorded around delivery. They are the complete code lists; the flags above are conveniences derived from them.

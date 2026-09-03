@@ -23,7 +23,9 @@ import re
 import sys
 
 BUILTIN_ROOTS = ["/srv/data/input/iCTG", "/srv/data/iCTG"]
-DATA_EXT = r"(parquet|csv|tsv|xlsx|xls|json|jsonl|zip|gz|duckdb|db|pkl|pickle|npy|npz|pt|feather|arrow)"
+DATA_EXT = (
+    r"(parquet|csv|tsv|xlsx|xls|json|jsonl|zip|gz|duckdb|db|pkl|pickle|npy|npz|pt|feather|arrow)"
+)
 
 ROW_TOOLS = (
     r"\b(cat|head|tail|less|more|most|nl|tac|xxd|hexdump|od|strings|column|bat|batcat|"
@@ -64,7 +66,9 @@ XFER_TOOLS = (
     r"gh|hub|git\s+add|git\s+commit|git\s+push|git\s+lfs|"
     r"cp|mv|ln|install|dd|tee|tar|zip|7z|gzip|bzip2|xz|zstd|base64|split)\b"
 )
-OUTSIDE_HINTS = r"(~|\$HOME|/home/|/tmp/|/root/|/mnt/|/media/|/var/|/opt/|\./|\.\./|\$PWD|\$\(pwd\))"
+OUTSIDE_HINTS = (
+    r"(~|\$HOME|/home/|/tmp/|/root/|/mnt/|/media/|/var/|/opt/|\./|\.\./|\$PWD|\$\(pwd\))"
+)
 
 
 def data_roots() -> list[str]:
@@ -84,7 +88,8 @@ def deny(reason: str) -> None:
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
                     "permissionDecisionReason": (
-                        "PATIENT DATA GUARD: " + reason
+                        "PATIENT DATA GUARD: "
+                        + reason
                         + " Row-level iCTG data must never be displayed or sent anywhere. "
                         "Use schema/metadata, COUNT(*)/aggregates, or equality joins that "
                         "report how many rows match (see CLAUDE.md)."
@@ -145,10 +150,27 @@ def check_bash(command: str, roots: list[str]) -> None:
     if touches and re.search(XFER_TOOLS, cmd):
         m = re.search(XFER_TOOLS, cmd)
         tool = m.group(1) if m else "tool"
-        copy_like = tool in {"cp", "mv", "ln", "install", "dd", "tee", "tar", "zip", "7z",
-                             "gzip", "bzip2", "xz", "zstd", "base64", "split"}
-        if not copy_like or re.search(OUTSIDE_HINTS, cmd) or not all(
-            under_root(p, roots) for p in re.findall(r"(/\S+)", cmd)
+        copy_like = tool in {
+            "cp",
+            "mv",
+            "ln",
+            "install",
+            "dd",
+            "tee",
+            "tar",
+            "zip",
+            "7z",
+            "gzip",
+            "bzip2",
+            "xz",
+            "zstd",
+            "base64",
+            "split",
+        }
+        if (
+            not copy_like
+            or re.search(OUTSIDE_HINTS, cmd)
+            or not all(under_root(p, roots) for p in re.findall(r"(/\S+)", cmd))
         ):
             deny(f"'{tool}' would copy or transmit patient data outside the data roots.")
 

@@ -94,8 +94,13 @@ These commands use `DEFAULT_STAGE2_DIR` from `config.py`. Rerunning the same sha
 ## Outputs
 
 Main final outputs are written under `DEFAULT_STAGE7_DIR`:
-- `registry.csv`: matched registry metadata, one row per `BabyID`
+- `registry.csv`: matched registry metadata and outcomes, one row per `BabyID` (185
+  columns: gravniva variables, labour timeline, ICD-10/KVÅ derived flags, SNQ neonatal-care
+  variables and the composite `severe_neonatal_outcome`; see
+  `stage7_registry_data_dictionary.md`)
 - `ctg_final.parquet`: anonymized CTG data linked by `BabyID`
+- `mother_diagnoses.csv`, `child_diagnoses.csv`, `child_procedures.csv`: the dated SPR long
+  tables restricted to matched babies, as (`BabyID`, `day_offset` from birth, `code`)
 
 Intermediate outputs for each stage are written under `DEFAULT_REDUCTION_ROOT`; the
 pretraining export lives in `stage_3_sessionfilter/all_sessions/`.

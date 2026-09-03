@@ -9,7 +9,9 @@ import os
 
 # Registry export root: the Swedish Pregnancy Register ("SPR data ...") directory and the
 # SNQ xlsx, as delivered. Export names are long and carry an ID, so they are resolved by glob.
-DEFAULT_REGISTRY_ROOT = os.environ.get("CTG_REGISTRY_ROOT", "/srv/data/input/iCTG/CTG_registry_data")
+DEFAULT_REGISTRY_ROOT = os.environ.get(
+    "CTG_REGISTRY_ROOT", "/srv/data/input/iCTG/CTG_registry_data"
+)
 
 
 def _find_one(pattern: str, fallback: str) -> str:
@@ -18,7 +20,9 @@ def _find_one(pattern: str, fallback: str) -> str:
 
 
 # SPR export directory: gravniva.csv, pop.csv and the dated diagnosis/procedure tables.
-DEFAULT_SPR_DIR = os.environ.get("CTG_SPR_DIR", _find_one("SPR data*", f"{DEFAULT_REGISTRY_ROOT}/SPR"))
+DEFAULT_SPR_DIR = os.environ.get(
+    "CTG_SPR_DIR", _find_one("SPR data*", f"{DEFAULT_REGISTRY_ROOT}/SPR")
+)
 # CSV with patient metadata (gravniva.csv), one row per live-born singleton.
 DEFAULT_PATIENT_CSV = os.environ.get("CTG_PATIENT_CSV", f"{DEFAULT_SPR_DIR}/gravniva.csv")
 # Dated long tables (one row per diagnosis/procedure code) from the same export.
