@@ -25,6 +25,11 @@ apply to every agent and subagent, in every session, with no exceptions for "jus
 - If a task cannot be done without looking at real content, stop and say so instead of
   looking.
 
+These rules are enforced by a PreToolUse hook (`.claude/settings.json` → `bin/guard_patient_data.py`)
+that denies row-printing, row-returning and data-transfer commands touching the data roots. If it
+blocks a legitimate aggregate query, rewrite the query (COUNT/GROUP BY without row output) rather
+than bypassing the hook.
+
 The `BabyID` salt in `CTG_preprocess/config.py` is a secret; do not paste it into messages.
 
 ## Project layout

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$CLAUDE_PROJECT_DIR/bin/guard_patient_data.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking for patient-data exposure"
+          }
+        ]
+      }
+    ]
+  }
+}
