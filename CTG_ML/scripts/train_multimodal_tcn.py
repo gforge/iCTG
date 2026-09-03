@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 from typing import TypedDict
@@ -27,8 +28,11 @@ def set_training_seed(seed: int, deterministic: bool) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     if deterministic:
+        # cuBLAS needs this before the first CUDA matmul for deterministic algorithms;
+        # ops without a deterministic kernel warn instead of aborting the run.
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         try:
-            torch.use_deterministic_algorithms(True)
+            torch.use_deterministic_algorithms(True, warn_only=True)
         except Exception:
             pass
         if hasattr(torch.backends, "cudnn"):
@@ -535,6 +539,12 @@ def main() -> None:
         help="Override training seed for repeated ablation runs.",
     )
     parser.add_argument(
+        "--deterministic",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Force (or disable) deterministic training; overrides train.deterministic.",
+    )
+    parser.add_argument(
         "--run-name",
         default=None,
         help="Optional suffix used for checkpoint/history/metrics filenames.",
@@ -574,7 +584,12 @@ def main() -> None:
     if init_encoder_path is not None and not init_encoder_path.exists():
         raise FileNotFoundError(f"Pretrained encoder not found: {init_encoder_path}")
     train_seed = int(args.seed_override) if args.seed_override is not None else int(cfg.train.seed)
-    set_training_seed(train_seed, cfg.train.deterministic)
+    deterministic = (
+        bool(args.deterministic)
+        if args.deterministic is not None
+        else bool(cfg.train.deterministic)
+    )
+    set_training_seed(train_seed, deterministic)
 
     out_dir = cfg.sequence.output_dir
     train_npz = Path(args.train_npz) if args.train_npz else out_dir / "train.npz"
@@ -648,11 +663,18 @@ def main() -> None:
     if ablate_columns:
         print(f"Ablated raw tabular columns: {ablate_columns}")
         print(f"Affected encoded tabular features: {len(ablated_feature_indices)}")
-    print(f"Training seed: {train_seed} (deterministic={cfg.train.deterministic})")
+    print(f"Training seed: {train_seed} (deterministic={deterministic})")
     print(f"Device: {device} (cuda_available={torch.cuda.is_available()}, amp={use_amp})")
 
+    # Own generator: the shuffle order then depends only on the seed, not on how much of
+    # the global RNG stream earlier setup consumed (ablations change that).
     train_loader = DataLoader(
-        train_ds, batch_size=cfg.train.batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda
+        train_ds,
+        batch_size=cfg.train.batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=use_cuda,
+        generator=torch.Generator().manual_seed(train_seed),
     )
     val_loader = DataLoader(
         val_ds, batch_size=cfg.train.batch_size, shuffle=False, num_workers=0, pin_memory=use_cuda

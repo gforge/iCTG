@@ -201,6 +201,7 @@ def _build_command(
     spec: AblationSpec,
     metrics_out: Path,
     show_inner_progress: bool,
+    deterministic: bool = True,
 ) -> list[str]:
     cmd = [
         sys.executable,
@@ -218,6 +219,9 @@ def _build_command(
     ]
     if not show_inner_progress:
         cmd.append("--no-progress")
+    # Every ablation run of a seed must differ only in the ablation, so pin determinism
+    # explicitly instead of inheriting whatever the config says.
+    cmd.append("--deterministic" if deterministic else "--no-deterministic")
     if spec.kind == "sequence":
         cmd.append("--ablate-sequence")
     elif spec.kind == "tabular_all":
@@ -321,6 +325,7 @@ def run_study(
     force: bool,
     show_inner_progress: bool,
     only_ablations: list[str] | None,
+    deterministic: bool = True,
 ) -> None:
     cfg = load_multimodal_config(config_path)
     grouped, single = _default_group_specs(cfg)
@@ -363,7 +368,14 @@ def run_study(
                 eta = _format_duration(avg * (total_runs - completed))
             print(f"{prefix} -> starting (ETA {eta})")
             cmd = _build_command(
-                train_script, config_path, device, seed, spec, metrics_out, show_inner_progress
+                train_script,
+                config_path,
+                device,
+                seed,
+                spec,
+                metrics_out,
+                show_inner_progress,
+                deterministic,
             )
             subprocess.run(cmd, check=True)
         payload = json.loads(metrics_out.read_text())
@@ -521,6 +533,12 @@ def main() -> None:
         action="store_true",
         help="Show the full batch progress bars from each underlying training run.",
     )
+    parser.add_argument(
+        "--deterministic",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run every training with deterministic algorithms (default on for ablations).",
+    )
     args = parser.parse_args()
 
     cfg = load_multimodal_config(args.config)
@@ -542,6 +560,7 @@ def main() -> None:
         args.force,
         args.show_inner_progress,
         only_ablations,
+        args.deterministic,
     )
 
 

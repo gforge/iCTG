@@ -292,7 +292,12 @@ def run_pretraining(
     stds = torch.tensor(stds_list, dtype=torch.float32, device=dev)
     pin = dev.type == "cuda"
     train_loader = DataLoader(
-        train_ds, batch_size=pretrain_cfg.batch_size, shuffle=True, num_workers=0, pin_memory=pin
+        train_ds,
+        batch_size=pretrain_cfg.batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=pin,
+        generator=torch.Generator().manual_seed(pretrain_cfg.seed),
     )
     val_loader = (
         DataLoader(
