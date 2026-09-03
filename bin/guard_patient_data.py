@@ -130,7 +130,9 @@ def check_bash(command: str, roots: list[str]) -> None:
     low = cmd.lower()
     touches = mentions_root(cmd, roots)
     # A parquet/duckdb file anywhere is treated as potential patient data.
-    touches_binary = re.search(r"\S+\.(parquet|duckdb)\b", low) is not None
+    touches_binary = (
+        re.search(r"(^|[\s'\"=])[~./\w-]*/[\w.*-]+\.(parquet|duckdb)\b", low) is not None
+    )
     if not (touches or touches_binary):
         allow()
 

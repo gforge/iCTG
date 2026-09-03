@@ -105,6 +105,28 @@ Main final outputs are written under `DEFAULT_STAGE7_DIR`:
 Intermediate outputs for each stage are written under `DEFAULT_REDUCTION_ROOT`; the
 pretraining export lives in `stage_3_sessionfilter/all_sessions/`.
 
+### Stage 8: time shifting (the deliverable)
+
+`time_shift.py` copies `registry.csv`, `ctg_final.parquet` and the all-sessions export into
+`stage_8_timeshift/` with every date and timestamp shifted by a per-pregnancy number of whole
+days. Time of day and all relative quantities (seconds before birth, `day_offset` in the long
+tables, ages) are untouched, and a pregnancy's CTG, registry row and pretraining sessions all
+move together. Per mother, a base shift is drawn uniformly from ±365 days and the interval
+between consecutive pregnancies is stretched or shrunk by a random 10-20 %, so birth order is
+kept but the true spacing (and hence the true dates) cannot be recovered from siblings.
+Shifts are seeded from a secret, so a rerun reproduces them; the resulting
+`timeshift_key.parquet` (BabyID → shift) and `timeshift_summary.json` stay in the stage 8
+directory with the other intermediate data and must not be shared with the deliverable.
+Options: `--max-days`, `--jitter-min/--jitter-max`, `--no-all-sessions`.
+
+### Secrets
+
+The BabyID salt and the time-shift secret are never in git. They are read from
+`CTG_BABYID_SALT` / `CTG_TIMESHIFT_SECRET`, else from the files `babyid_salt` /
+`timeshift_secret` in `CTG_SECRETS_DIR` (default `<reduction root>/secrets`, mode 700), and
+generated there on first use with a warning. Keep that directory: without it BabyIDs and
+shifts of a rerun will differ. Stage 3 refuses to run on a DuckDB build without `sha256`.
+
 ## Checks
 
 `uv run mypy`, `uv run pytest` (synthetic DuckDB/pyarrow fixtures, no patient data) and

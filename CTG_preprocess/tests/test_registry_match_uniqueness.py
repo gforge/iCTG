@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import duckdb
+
 from registry_matching import (
     MULTI_BABY_REGISTRY_ROWS_SQL,
     MULTI_REGISTRY_BABIES_SQL,

@@ -37,7 +37,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
+
 from cohort_report import _source_sql
+from config import (
+    DEFAULT_PATIENT_CSV,
+    DEFAULT_STAGE3_DIR,
+    DEFAULT_STAGE4_DIR,
+    DEFAULT_STAGE5_5_OUTPUT_FILE,
+)
 from registry_matching import (
     UNIQUE_MATCHES_SQL,
     _count,
@@ -45,13 +52,6 @@ from registry_matching import (
     _create_reg_raw_view,
     _create_reg_table,
     _ctg_day_match_predicate,
-)
-
-from config import (
-    DEFAULT_PATIENT_CSV,
-    DEFAULT_STAGE3_DIR,
-    DEFAULT_STAGE4_DIR,
-    DEFAULT_STAGE5_5_OUTPUT_FILE,
 )
 
 CATEGORIES: tuple[str, ...] = (

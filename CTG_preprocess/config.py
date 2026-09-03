@@ -78,7 +78,33 @@ DEFAULT_STAGE3_WINDOW_SCOPE = "pregnancy"
 # Optional Stage 3 side output with ALL sessions of every pregnancy (no PatientID), used
 # for self-supervised pretraining. Written only when --stage3-all-sessions-out is given.
 DEFAULT_STAGE3_ALL_SESSIONS_DIR = f"{DEFAULT_STAGE3_DIR}/all_sessions"
-DEFAULT_BABYID_SALT = "VibeSaltTemp123"
+
+# Secrets (BabyID salt, time-shift secret) live outside git: environment variables
+# CTG_BABYID_SALT / CTG_TIMESHIFT_SECRET, or files in this directory (see secrets_store.py).
+DEFAULT_SECRETS_DIR = os.environ.get("CTG_SECRETS_DIR", f"{DEFAULT_REDUCTION_ROOT}/secrets")
+
+# Stage 8: time shifting of the final outputs (see time_shift.py).
+DEFAULT_STAGE8_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_8_timeshift"
+DEFAULT_STAGE8_REGISTRY_CSV = f"{DEFAULT_STAGE8_DIR}/registry.csv"
+DEFAULT_STAGE8_CTG_PARQUET = f"{DEFAULT_STAGE8_DIR}/ctg_final.parquet"
+DEFAULT_STAGE8_ALL_SESSIONS_DIR = f"{DEFAULT_STAGE8_DIR}/all_sessions"
+# Per-BabyID shift table (BabyID, shift_days). Re-identification aid: stays with the
+# intermediate data, never with the deliverable.
+DEFAULT_STAGE8_KEY_FILE = f"{DEFAULT_STAGE8_DIR}/timeshift_key.parquet"
+# Every mother gets a base shift of whole days drawn uniformly from [-MAX, +MAX] ...
+DEFAULT_TIMESHIFT_MAX_DAYS = 365
+# ... and the interval between her consecutive pregnancies is stretched or shrunk by a
+# factor drawn uniformly from [JITTER_MIN, JITTER_MAX], with random sign.
+DEFAULT_TIMESHIFT_JITTER_MIN = 0.10
+DEFAULT_TIMESHIFT_JITTER_MAX = 0.20
+# registry.csv columns that carry absolute dates/timestamps and must be shifted.
+DEFAULT_TIMESHIFT_REGISTRY_COLUMNS = [
+    "birth_day",
+    "birth_timestamp",
+    "etablerade_varkar_datum",
+    "etablerade_varkar_timestamp",
+    "avled_datum",
+]
 
 # Progress report frequency (patients). Set to 0 to disable.
 DEFAULT_REPORT_EVERY = 1000

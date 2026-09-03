@@ -15,7 +15,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from config import (
-    DEFAULT_BABYID_SALT,
     DEFAULT_PARTITION_OUTPUT_DIR,
     DEFAULT_PARTITION_REPORT_EVERY,
     DEFAULT_STAGE0_DIR,
@@ -38,6 +37,7 @@ from config import (
     DEFAULT_STAGE5_MIN_FHR_SECONDS,
     DEFAULT_STAGE5_OUTPUT_FILE,
 )
+from secrets_store import get_secret
 
 
 def _parse_date(date_str: str) -> datetime:
@@ -590,7 +590,7 @@ def stage3_sessionfilter(
     gap_minutes: int = DEFAULT_STAGE3_GAP_MINUTES,
     preg_gap_days: int = DEFAULT_STAGE3_PREG_GAP_DAYS,
     last_hour_minutes: int = DEFAULT_STAGE3_LAST_HOUR_MINUTES,
-    babyid_salt: str = DEFAULT_BABYID_SALT,
+    babyid_salt: str | None = None,
     show_progress: bool = True,
     bucket_count: int = DEFAULT_STAGE3_BUCKETS,
     bucket_index: int | None = None,
@@ -623,17 +623,15 @@ def stage3_sessionfilter(
         pass
     source_sql = _duckdb_read_parquet_sql(input_dir)
 
-    def _pick_hash_func() -> str:
-        for func in ("sha256", "md5"):
-            try:
-                con.execute(f"SELECT {func}('test')").fetchone()
-                return func
-            except Exception:
-                continue
-        return "md5"
-
-    hash_func = _pick_hash_func()
-    babyid_expr = _stage3_babyid_expr(hash_func, babyid_salt)
+    if babyid_salt is None:
+        babyid_salt = get_secret("babyid_salt")
+    try:
+        con.execute("SELECT sha256('test')").fetchone()
+    except Exception as exc:  # pragma: no cover - depends on the DuckDB build
+        raise RuntimeError(
+            "This DuckDB build has no sha256(); refusing to fall back to md5 for BabyIDs."
+        ) from exc
+    babyid_expr = _stage3_babyid_expr("sha256", babyid_salt)
 
     def _bucket_expr() -> str:
         return _stage3_bucket_expr(bucket_count)
@@ -1402,8 +1400,11 @@ def main() -> None:
     parser.add_argument(
         "--babyid-salt",
         type=str,
-        default=DEFAULT_BABYID_SALT,
-        help="Salt used for BabyID hashing.",
+        default=None,
+        help=(
+            "Salt used for BabyID hashing. Default: CTG_BABYID_SALT or the secrets file "
+            "(see secrets_store.py); never commit it."
+        ),
     )
 
     parser.add_argument(

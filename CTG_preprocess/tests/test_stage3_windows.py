@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import duckdb
 import pytest
+
 from ctg_reduction import (
     _stage3_all_sessions_query,
     _stage3_babyid_expr,

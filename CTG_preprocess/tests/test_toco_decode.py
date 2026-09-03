@@ -7,6 +7,7 @@ import random
 
 import pyarrow as pa
 import pytest
+
 from ctg_reduction import _compute_toco, _decode_toco_fast, _fixed_width_string_bytes
 
 

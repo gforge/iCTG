@@ -498,6 +498,10 @@ SNQ variables are obtained by linking `gravniva.csv` to `SNQ data.xlsx` using `g
 - Prevalance: False 7.28%, True 2.62% (rest is missing and can be assumed to be False)
 
 
+## Time shifting (stage 8)
+
+The delivered files in `stage_8_timeshift/` are time-shifted copies of the stage 7 outputs: `birth_day`, `birth_timestamp`, `etablerade_varkar_datum`, `etablerade_varkar_timestamp`, `avled_datum` and every CTG `Timestamp` are moved by the same per-pregnancy number of whole days (up to about a year either way, with sibling intervals jittered by 10-20 %). Time-of-day fields (`birth_time_seconds`, `etablerade_varkar_tid`), all `*_seconds*` variables, `days_to_discharge`, `died_after_days`, `maternal_age` and the `day_offset` of the long tables are unaffected. Do not use the shifted dates for seasonality or calendar-time analyses; day of week is not preserved either.
+
 ## Notes on missing values
 
 Missing values in `registry.csv` generally reflect one of the following:

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import duckdb
 import pytest
+
 from registry_matching import (
     _bool_ja_nej_expr,
     _code_exact_expr,

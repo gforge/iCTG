@@ -14,6 +14,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+
 from registry_matching import (
     IDENTIFYING_COLUMNS,
     SNQ_VARIABLES,

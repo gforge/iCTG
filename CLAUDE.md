@@ -30,7 +30,11 @@ that denies row-printing, row-returning and data-transfer commands touching the 
 blocks a legitimate aggregate query, rewrite the query (COUNT/GROUP BY without row output) rather
 than bypassing the hook.
 
-The `BabyID` salt in `CTG_preprocess/config.py` is a secret; do not paste it into messages.
+The BabyID salt and the time-shift secret live outside git (`CTG_BABYID_SALT` /
+`CTG_TIMESHIFT_SECRET` or files under `<reduction root>/secrets`, see
+`CTG_preprocess/secrets_store.py`). Never print them, commit them, or copy
+`timeshift_key.parquet` next to a deliverable. The stage 8 outputs in `stage_8_timeshift/`
+are the only files meant to leave the server.
 
 ## Project layout
 

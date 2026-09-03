@@ -11,6 +11,7 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+
 from ctg_reduction import (
     _build_stage2_shards,
     _compute_fhr,

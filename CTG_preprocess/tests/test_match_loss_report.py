@@ -13,6 +13,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+
 from match_loss_report import (
     CATEGORIES,
     OFFSET_BUCKETS,

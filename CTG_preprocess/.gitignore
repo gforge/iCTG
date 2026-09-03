@@ -41,3 +41,6 @@ CTG Project Reference Document.md
 *.xlsx
 *.xls
 *.duckdb
+
+# never commit secrets (BabyID salt, time-shift secret)
+secrets/
