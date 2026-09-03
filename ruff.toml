@@ -24,7 +24,7 @@ ignore = [
 # the flat CTG_preprocess scripts import each other as top-level modules
 known-first-party = [
     "ictg", "ctg_ml", "config", "secrets_store", "ctg_reduction", "registry_matching",
-    "match_loss_report", "cohort_report", "time_shift",
+    "match_loss_report", "cohort_report", "time_shift", "pseudonyms",
 ]
 
 [format]

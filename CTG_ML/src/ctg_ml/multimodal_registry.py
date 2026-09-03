@@ -86,7 +86,10 @@ def load_registry_for_multimodal(
 
 
 def load_registry_labels_multimodal(registry_csv: str, at_risk_max_apgar: int = 6) -> pd.DataFrame:
-    df = pd.read_csv(registry_csv, usecols=["BabyID", "apgar5"])
+    """BabyID, apgar5, target and (when the registry has it) MotherID for split creation."""
+    header = list(pd.read_csv(registry_csv, nrows=0).columns)
+    usecols = ["BabyID", "apgar5"] + (["MotherID"] if "MotherID" in header else [])
+    df = pd.read_csv(registry_csv, usecols=usecols, dtype={"BabyID": str, "MotherID": str})
     df = df.dropna(subset=["BabyID", "apgar5"]).copy()
     df["apgar5"] = pd.to_numeric(df["apgar5"], errors="raise").astype(int)
     if df["BabyID"].duplicated().any():

@@ -300,6 +300,9 @@ def test_outputs_are_anonymized_and_matched_by_birth_day(stage7_outputs: dict[st
     forbidden = set(IDENTIFYING_COLUMNS) | {"personnummer_mor", "reg_digits"}
     assert not forbidden & set(reg.columns)
     assert reg.columns[0] == "BabyID"
+    assert reg.columns[1] == "MotherID"
+    assert reg["MotherID"].str.fullmatch(r"[0-9a-f]{16}").all()
+    assert reg["MotherID"].nunique() == 2  # two different mothers
     ctg = pq.read_table(stage7_outputs["ctg"]).to_pandas()
     assert set(ctg["BabyID"]) == {"babyA", "babyB"}
     assert "PatientID" not in ctg.columns

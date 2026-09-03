@@ -39,6 +39,8 @@ from config import (
     DEFAULT_STAGE7_MOTHER_DIAG_CSV,
     DEFAULT_STAGE7_REGISTRY_CSV,
 )
+from pseudonyms import mother_id_sql
+from secrets_store import get_secret
 
 
 def _ensure_parent(path: Path) -> None:
@@ -701,18 +703,23 @@ def _create_reg_table(
         )
 
 
-def _create_reg_clean_table(con: duckdb.DuckDBPyConnection) -> None:
+def _create_reg_clean_table(con: duckdb.DuckDBPyConnection, salt: str | None = None) -> None:
     """Keep the ``reg`` rows usable for matching and derive their CTG-style ``PatientID``.
 
     This is the single definition of which registry rows enter Stage 7 matching; the
-    match-loss report reuses it so the two cannot drift.
+    match-loss report reuses it so the two cannot drift. ``MotherID`` is the pseudonymous
+    mother key (see ``pseudonyms.py``), hashed with the BabyID salt.
     """
+    if salt is None:
+        salt = get_secret("babyid_salt")
+    patient_sql = "substr(reg_digits, 1, 8) || '-' || substr(reg_digits, 9, 4)"
     con.execute(
-        """
+        f"""
         CREATE TEMP TABLE reg_clean AS
         SELECT
             * EXCLUDE (reg_digits),
-            substr(reg_digits, 1, 8) || '-' || substr(reg_digits, 9, 4) AS PatientID
+            {patient_sql} AS PatientID,
+            {mother_id_sql(salt, patient_sql)} AS MotherID
         FROM reg
         WHERE reg_digits IS NOT NULL
           AND length(reg_digits) >= 12
@@ -1052,8 +1059,8 @@ def registry_match(
         )
 
     ordered_cols = [row[0] for row in con.execute("DESCRIBE unique_matches").fetchall()]
-    output_cols = ["BabyID"] + [
-        c for c in ordered_cols if c not in IDENTIFYING_COLUMNS and c != "BabyID"
+    output_cols = ["BabyID", "MotherID"] + [
+        c for c in ordered_cols if c not in IDENTIFYING_COLUMNS and c not in ("BabyID", "MotherID")
     ]
     leaked = [c for c in output_cols if "personnummer" in c.lower() or c in IDENTIFYING_COLUMNS]
     if leaked:

@@ -50,6 +50,11 @@ def main() -> None:
     )
     print(f"Pretrain parquet: {pretrain_parquet}")
     print(f"Splits csv:       {splits_path} (val/test BabyIDs excluded)")
+    mothers_csv = cfg.pretrain.mothers_csv
+    if mothers_csv is not None and Path(mothers_csv).exists():
+        print(f"Mothers csv:      {mothers_csv} (siblings of val/test pregnancies excluded)")
+    else:
+        print("Mothers csv:      none (siblings of val/test pregnancies are NOT excluded)")
     print(f"Output dir:       {output_dir}")
 
     stats = build_pretrain_windows(
@@ -60,6 +65,7 @@ def main() -> None:
         pretrain_cfg=cfg.pretrain,
         allow_no_splits=args.allow_no_splits,
         show_progress=not args.no_progress,
+        mothers_csv=mothers_csv,
     )
 
     print("\nPretraining window summary")

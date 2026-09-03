@@ -117,7 +117,9 @@ kept but the true spacing (and hence the true dates) cannot be recovered from si
 Shifts are seeded from a secret, so a rerun reproduces them; the resulting
 `timeshift_key.parquet` (BabyID → shift) and `timeshift_summary.json` stay in the stage 8
 directory with the other intermediate data and must not be shared with the deliverable.
-Options: `--max-days`, `--jitter-min/--jitter-max`, `--no-all-sessions`.
+Options: `--max-days`, `--jitter-min/--jitter-max`, `--no-all-sessions`. Stage 8 also writes
+`mothers.csv` (`BabyID`, `MotherID`) for every pregnancy in the CTG data, so `CTG_ML` can
+split by mother and keep siblings of validation/test pregnancies out of pretraining.
 
 ### Secrets
 

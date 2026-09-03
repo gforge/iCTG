@@ -92,6 +92,9 @@ class MultimodalPretrainConfig:
     """
 
     pretrain_parquet: Path = Path("data/CTG3/ctg_pretrain.parquet")
+    # BabyID -> MotherID table (stage 8 mothers.csv); None or a missing file disables the
+    # sibling exclusion and only the val/test BabyIDs are excluded.
+    mothers_csv: Path | None = None
     window_minutes: int = 60
     stride_minutes: float = 30.0
     min_signal_fraction: float = 0.5
@@ -130,6 +133,7 @@ def _load_pretrain_config(raw: dict[str, Any] | None) -> MultimodalPretrainConfi
         return d
     return MultimodalPretrainConfig(
         pretrain_parquet=Path(str(raw.get("pretrain_parquet", d.pretrain_parquet))),
+        mothers_csv=Path(str(raw["mothers_csv"])) if raw.get("mothers_csv") else d.mothers_csv,
         window_minutes=int(raw.get("window_minutes", d.window_minutes)),
         stride_minutes=float(raw.get("stride_minutes", d.stride_minutes)),
         min_signal_fraction=float(raw.get("min_signal_fraction", d.min_signal_fraction)),

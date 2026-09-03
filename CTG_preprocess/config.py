@@ -91,6 +91,9 @@ DEFAULT_STAGE8_ALL_SESSIONS_DIR = f"{DEFAULT_STAGE8_DIR}/all_sessions"
 # Per-BabyID shift table (BabyID, shift_days). Re-identification aid: stays with the
 # intermediate data, never with the deliverable.
 DEFAULT_STAGE8_KEY_FILE = f"{DEFAULT_STAGE8_DIR}/timeshift_key.parquet"
+# BabyID -> MotherID for every pregnancy in the CTG data (also the pretraining-only ones),
+# so mother-level splits and leakage exclusions can be built downstream.
+DEFAULT_STAGE8_MOTHERS_CSV = f"{DEFAULT_STAGE8_DIR}/mothers.csv"
 # Every mother gets a base shift of whole days drawn uniformly from [-MAX, +MAX] ...
 DEFAULT_TIMESHIFT_MAX_DAYS = 365
 # ... and the interval between her consecutive pregnancies is stretched or shrunk by a

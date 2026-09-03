@@ -9,7 +9,9 @@ def load_registry_labels(
     registry_csv: str | Path,
     at_risk_max_apgar: int,
 ) -> pd.DataFrame:
-    df = pd.read_csv(registry_csv, usecols=["BabyID", "apgar5"])
+    header = list(pd.read_csv(registry_csv, nrows=0).columns)
+    usecols = ["BabyID", "apgar5"] + (["MotherID"] if "MotherID" in header else [])
+    df = pd.read_csv(registry_csv, usecols=usecols, dtype={"BabyID": str, "MotherID": str})
     df = df.dropna(subset=["BabyID", "apgar5"]).copy()
     df["apgar5"] = df["apgar5"].astype(int)
 

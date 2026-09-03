@@ -145,6 +145,9 @@ These are kept so earlier results can still be inspected or reproduced, but new 
 
 ## Notes
 
-- Splits are created on `BabyID`, so no pregnancy leaks across train/val/test.
+- Splits are created on `MotherID` when the registry has it (stage 7 output from
+  September 2026 on), so all pregnancies of one mother land in the same split; without it
+  they fall back to `BabyID`. Pretraining excludes the val/test BabyIDs and, when
+  `pretrain.mothers_csv` exists, every sibling pregnancy of those mothers as well.
 - The baseline is a sanity check and usually catches data issues early (join problems, leakage, label bugs).
 - CTG3 preprocessing defaults to the last 60 minutes at 1 Hz (3600 steps).

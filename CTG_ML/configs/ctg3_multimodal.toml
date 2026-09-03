@@ -120,6 +120,9 @@ freeze_encoder_epochs = 0
 # unlabeled CTG windows from ALL sessions of ALL pregnancies (antenatal and earlier
 # labour sessions). Either a single parquet file or a directory of *.parquet buckets.
 pretrain_parquet = "data/CTG3/ctg_pretrain.parquet"
+# BabyID -> MotherID for every pregnancy (stage 8 `mothers.csv`). With it, pretraining also
+# excludes the siblings of val/test pregnancies, not only the val/test BabyIDs themselves.
+mothers_csv = "data/CTG3/mothers.csv"
 window_minutes = 60
 stride_minutes = 30
 # Windows need at least this fraction of non-missing (non-zero) FHR samples.

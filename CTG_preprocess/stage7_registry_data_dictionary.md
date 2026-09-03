@@ -22,6 +22,12 @@ In the descriptions below:
 - Description: An anonymized identifier representing one pregnancy/child episode.
 - Derivation: Created earlier in the CTG pipeline and used as the key linking `registry.csv` to the final anonymized CTG parquet file.
 
+### `MotherID`
+- Type: string (16 hex characters)
+- Source: CTG preprocessing pipeline (stage 7)
+- Description: Pseudonymous identifier of the mother, identical for all her pregnancies in the dataset.
+- Derivation: `sha256(salt | "mother" | PatientID)` truncated to 16 characters, with the same secret salt as `BabyID`. Use it for mother-level train/validation/test splits and leakage exclusions. Stage 8 also writes `mothers.csv` (`BabyID`, `MotherID`) for every pregnancy in the CTG data, including the pretraining-only ones that have no registry row.
+
 ## Birth timing and maternal age
 
 ### `birth_day`

@@ -42,14 +42,15 @@ from config import (
     DEFAULT_STAGE7_REGISTRY_CSV,
     DEFAULT_STAGE8_ALL_SESSIONS_DIR,
     DEFAULT_STAGE8_CTG_PARQUET,
-    DEFAULT_STAGE8_DIR,
     DEFAULT_STAGE8_KEY_FILE,
+    DEFAULT_STAGE8_MOTHERS_CSV,
     DEFAULT_STAGE8_REGISTRY_CSV,
     DEFAULT_TIMESHIFT_JITTER_MAX,
     DEFAULT_TIMESHIFT_JITTER_MIN,
     DEFAULT_TIMESHIFT_MAX_DAYS,
     DEFAULT_TIMESHIFT_REGISTRY_COLUMNS,
 )
+from pseudonyms import mother_id
 from secrets_store import get_secret
 
 
@@ -227,7 +228,9 @@ def time_shift_outputs(
     ctg_out: str | Path = DEFAULT_STAGE8_CTG_PARQUET,
     all_sessions_out: str | Path = DEFAULT_STAGE8_ALL_SESSIONS_DIR,
     key_out: str | Path = DEFAULT_STAGE8_KEY_FILE,
+    mothers_out: str | Path | None = None,
     secret: str | None = None,
+    babyid_salt: str | None = None,
     max_days: int = DEFAULT_TIMESHIFT_MAX_DAYS,
     jitter_min: float = DEFAULT_TIMESHIFT_JITTER_MIN,
     jitter_max: float = DEFAULT_TIMESHIFT_JITTER_MAX,
@@ -256,6 +259,21 @@ def time_shift_outputs(
     key_out.parent.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY key TO '{_safe(key_out)}' (FORMAT PARQUET)")
 
+    # BabyID -> MotherID for every pregnancy (same hash as stage 7's registry.csv).
+    if babyid_salt is None:
+        babyid_salt = get_secret("babyid_salt")
+    mothers_df = pregnancies[["BabyID", "PatientID"]].copy()
+    mothers_df["MotherID"] = [
+        mother_id(babyid_salt, str(p)) if pd.notna(p) else ""
+        for p in mothers_df["PatientID"].tolist()
+    ]
+    # Defaults next to the shifted registry so tests and custom output dirs stay self-contained.
+    mothers_out = (
+        Path(mothers_out) if mothers_out is not None else registry_out.parent / "mothers.csv"
+    )
+    mothers_out.parent.mkdir(parents=True, exist_ok=True)
+    mothers_df[["BabyID", "MotherID"]].sort_values("BabyID").to_csv(mothers_out, index=False)
+
     n_registry, shifted_cols = _shift_registry(con, registry_in, registry_out, columns)
     n_ctg = _shift_parquet(con, ctg_in, ctg_out, "ctg_final")
 
@@ -282,12 +300,9 @@ def time_shift_outputs(
         "ctg_rows": n_ctg,
         "all_sessions_files": all_files,
         "all_sessions_rows": n_all,
+        "mothers_rows": int(len(mothers_df)),
     }
-    (
-        Path(DEFAULT_STAGE8_DIR)
-        if registry_out.parent == Path(DEFAULT_STAGE8_DIR)
-        else registry_out.parent
-    ).mkdir(parents=True, exist_ok=True)
+    registry_out.parent.mkdir(parents=True, exist_ok=True)
     (registry_out.parent / "timeshift_summary.json").write_text(
         json.dumps(summary, indent=2) + "\n"
     )
@@ -295,6 +310,7 @@ def time_shift_outputs(
     print(f"Wrote shifted registry: {registry_out}")
     print(f"Wrote shifted CTG: {ctg_out}")
     print(f"Wrote shift key (keep with intermediate data): {key_out}")
+    print(f"Wrote BabyID -> MotherID table: {mothers_out}")
     return summary
 
 
@@ -308,6 +324,7 @@ def main() -> None:
     parser.add_argument("--ctg-out", default=DEFAULT_STAGE8_CTG_PARQUET)
     parser.add_argument("--all-sessions-out", default=DEFAULT_STAGE8_ALL_SESSIONS_DIR)
     parser.add_argument("--key-out", default=DEFAULT_STAGE8_KEY_FILE)
+    parser.add_argument("--mothers-out", default=DEFAULT_STAGE8_MOTHERS_CSV)
     parser.add_argument("--max-days", type=int, default=DEFAULT_TIMESHIFT_MAX_DAYS)
     parser.add_argument("--jitter-min", type=float, default=DEFAULT_TIMESHIFT_JITTER_MIN)
     parser.add_argument("--jitter-max", type=float, default=DEFAULT_TIMESHIFT_JITTER_MAX)
@@ -325,6 +342,7 @@ def main() -> None:
             ctg_out=args.ctg_out,
             all_sessions_out=args.all_sessions_out,
             key_out=args.key_out,
+            mothers_out=args.mothers_out,
             max_days=args.max_days,
             jitter_min=args.jitter_min,
             jitter_max=args.jitter_max,

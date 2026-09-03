@@ -49,3 +49,22 @@ def test_stratification_keeps_positives_in_every_split() -> None:
     assert sizes.loc["train", "sum"] == 6
     assert sizes.loc["val", "sum"] == 2
     assert sizes.loc["test", "sum"] == 2
+
+
+def test_siblings_stay_in_the_same_split() -> None:
+    labels = _synthetic_labels(n_babies=60, n_positive=12)
+    # 20 mothers with three pregnancies each, one baby with unknown mother
+    labels["MotherID"] = [f"M{i % 20:02d}" for i in range(60)]
+    labels.loc[0, "MotherID"] = None
+
+    for seed in range(5):
+        splits = create_stratified_splits(labels, FRACTIONS, random_seed=seed)
+        assert len(splits) == 60 and not splits["BabyID"].duplicated().any()
+        assert "MotherID" in splits.columns
+        per_mother = splits.dropna(subset=["MotherID"]).groupby("MotherID")["split"].nunique()
+        assert (per_mother == 1).all()
+        assert set(splits["split"]) == {"train", "val", "test"}
+
+    # without the column the split degrades to the BabyID level
+    plain = create_stratified_splits(labels.drop(columns=["MotherID"]), FRACTIONS, random_seed=1)
+    assert "MotherID" not in plain.columns and len(plain) == 60

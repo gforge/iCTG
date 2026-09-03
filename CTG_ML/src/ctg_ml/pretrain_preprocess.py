@@ -88,8 +88,18 @@ def resolve_parquet_source(path: str | Path) -> str:
     return str(p)
 
 
-def load_excluded_baby_ids(splits_csv: str | Path | None, allow_no_splits: bool) -> set[str]:
-    """BabyIDs in the supervised val/test splits; these must never enter pretraining."""
+def load_excluded_baby_ids(
+    splits_csv: str | Path | None,
+    allow_no_splits: bool,
+    mothers_csv: str | Path | None = None,
+) -> set[str]:
+    """BabyIDs that must never enter pretraining.
+
+    These are the BabyIDs in the supervised val/test splits and, when ``mothers_csv``
+    (BabyID, MotherID; stage 8 ``mothers.csv``) is given and the splits carry ``MotherID``,
+    every other pregnancy of the same mothers, including pretraining-only pregnancies that
+    have no registry row.
+    """
     if splits_csv is None or not Path(splits_csv).exists():
         if allow_no_splits:
             return set()
@@ -98,9 +108,26 @@ def load_excluded_baby_ids(splits_csv: str | Path | None, allow_no_splits: bool)
             "BabyIDs. Run `scripts/make_splits_multimodal.py` first, or pass --allow-no-splits "
             "if there is deliberately no labeled split yet."
         )
-    df = pd.read_csv(splits_csv, usecols=["BabyID", "split"], dtype={"BabyID": str})
-    excluded = df.loc[df["split"].isin(EXCLUDED_SPLITS), "BabyID"]
-    return {str(x) for x in excluded.tolist()}
+    header = list(pd.read_csv(splits_csv, nrows=0).columns)
+    has_mother = "MotherID" in header
+    usecols = ["BabyID", "split"] + (["MotherID"] if has_mother else [])
+    df = pd.read_csv(splits_csv, usecols=usecols, dtype={"BabyID": str, "MotherID": str})
+    held_out = df[df["split"].isin(EXCLUDED_SPLITS)]
+    excluded = {str(x) for x in held_out["BabyID"].tolist()}
+
+    if mothers_csv is not None and Path(mothers_csv).exists():
+        if not has_mother:
+            raise ValueError(
+                f"{mothers_csv} given but {splits_csv} has no MotherID column; "
+                "regenerate the splits from a registry with MotherID."
+            )
+        mothers = pd.read_csv(mothers_csv, dtype={"BabyID": str, "MotherID": str})
+        mothers = mothers.dropna(subset=["MotherID"])
+        mothers = mothers[mothers["MotherID"].str.strip() != ""]
+        held_out_mothers = set(held_out["MotherID"].dropna().astype(str))
+        siblings = mothers.loc[mothers["MotherID"].isin(held_out_mothers), "BabyID"]
+        excluded |= {str(x) for x in siblings.tolist()}
+    return excluded
 
 
 def pretrain_sequence_config(
@@ -254,9 +281,10 @@ def build_pretrain_windows(
     pretrain_cfg: MultimodalPretrainConfig,
     allow_no_splits: bool = False,
     show_progress: bool = True,
+    mothers_csv: str | Path | None = None,
 ) -> PretrainBuildStats:
     source = resolve_parquet_source(pretrain_parquet)
-    excluded = load_excluded_baby_ids(splits_csv, allow_no_splits)
+    excluded = load_excluded_baby_ids(splits_csv, allow_no_splits, mothers_csv=mothers_csv)
     win_cfg = pretrain_sequence_config(seq_cfg, pretrain_cfg)
     channel_names = sequence_channel_names(win_cfg)
     n_steps = int(win_cfg.window_minutes * 60 * win_cfg.sample_rate_hz)

@@ -71,6 +71,39 @@ def test_missing_splits_fails_loudly_unless_allowed(tmp_path: Path) -> None:
     assert load_excluded_baby_ids(write_splits(tmp_path), allow_no_splits=False) == {"B", "X"}
 
 
+def test_siblings_of_held_out_mothers_are_excluded(tmp_path: Path) -> None:
+    import pandas as pd
+
+    splits = tmp_path / "splits.csv"
+    pd.DataFrame(
+        {
+            "BabyID": ["A", "B", "X"],
+            "split": ["train", "val", "test"],
+            "MotherID": ["m1", "m2", "m3"],
+        }
+    ).to_csv(splits, index=False)
+    mothers = tmp_path / "mothers.csv"
+    pd.DataFrame(
+        {
+            # S2 is B's sibling (pretraining-only), S3 is X's sibling, S1 is A's sibling,
+            # U has no known mother.
+            "BabyID": ["A", "B", "X", "S1", "S2", "S3", "U"],
+            "MotherID": ["m1", "m2", "m3", "m1", "m2", "m3", ""],
+        }
+    ).to_csv(mothers, index=False)
+    assert load_excluded_baby_ids(splits, allow_no_splits=False) == {"B", "X"}
+    assert load_excluded_baby_ids(splits, allow_no_splits=False, mothers_csv=mothers) == {
+        "B",
+        "X",
+        "S2",
+        "S3",
+    }
+    # a mothers table without a MotherID column in the splits is a configuration error
+    pd.DataFrame({"BabyID": ["A", "B"], "split": ["train", "val"]}).to_csv(splits, index=False)
+    with pytest.raises(ValueError):
+        load_excluded_baby_ids(splits, allow_no_splits=False, mothers_csv=mothers)
+
+
 @pytest.mark.parametrize("as_directory", [False, True])
 def test_build_pretrain_windows_excludes_val_test_and_writes_shards(
     tmp_path: Path, as_directory: bool

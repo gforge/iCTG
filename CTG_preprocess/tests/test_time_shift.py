@@ -148,6 +148,7 @@ def synthetic_stage_outputs(tmp_path: Path) -> dict[str, Path]:
         ctg_out=out / "ctg_final.parquet",
         all_sessions_out=out / "all_sessions",
         key_out=out / "timeshift_key.parquet",
+        mothers_out=out / "mothers.csv",
         secret="fixture-secret",
         max_days=200,
     )
@@ -235,3 +236,16 @@ def test_missing_shift_is_an_error(tmp_path: Path) -> None:
             key_out=tmp_path / "out" / "key.parquet",
             secret="s",
         )
+
+
+def test_mothers_table_covers_every_pregnancy(synthetic_stage_outputs: dict[str, Path]) -> None:
+    from pseudonyms import mother_id
+
+    out = synthetic_stage_outputs["out"]
+    mothers = pd.read_csv(out / "mothers.csv", dtype=str).fillna("")
+    assert list(mothers.columns) == ["BabyID", "MotherID"]
+    by_baby = mothers.set_index("BabyID")["MotherID"]
+    assert set(by_baby.index) == {"A", "B", "C", "D"}
+    assert by_baby["A"] == by_baby["B"] != by_baby["C"]  # A and B share mother m1
+    assert by_baby["D"] == ""  # pretraining-only pregnancy without PatientID
+    assert by_baby["A"] == mother_id("unit-test-salt", "m1")
