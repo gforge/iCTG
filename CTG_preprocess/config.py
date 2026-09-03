@@ -1,17 +1,34 @@
 from __future__ import annotations
 
+import glob
 import os
 
 # Default paths and settings. The defaults point at the shared server layout under
 # /srv/data/input/iCTG; override any of them with the environment variables named below
 # (e.g. on a workstation with a local copy) instead of editing this file.
 
-# CSV with patient metadata (gravniva.csv).
-DEFAULT_PATIENT_CSV = os.environ.get(
-    "CTG_PATIENT_CSV", "/srv/data/input/iCTG/registry/gravniva.csv"
-)
+# Registry export root: the Swedish Pregnancy Register ("SPR data ...") directory and the
+# SNQ xlsx, as delivered. Export names are long and carry an ID, so they are resolved by glob.
+DEFAULT_REGISTRY_ROOT = os.environ.get("CTG_REGISTRY_ROOT", "/srv/data/input/iCTG/CTG_registry_data")
+
+
+def _find_one(pattern: str, fallback: str) -> str:
+    hits = sorted(glob.glob(os.path.join(DEFAULT_REGISTRY_ROOT, pattern)))
+    return hits[0] if hits else fallback
+
+
+# SPR export directory: gravniva.csv, pop.csv and the dated diagnosis/procedure tables.
+DEFAULT_SPR_DIR = os.environ.get("CTG_SPR_DIR", _find_one("SPR data*", f"{DEFAULT_REGISTRY_ROOT}/SPR"))
+# CSV with patient metadata (gravniva.csv), one row per live-born singleton.
+DEFAULT_PATIENT_CSV = os.environ.get("CTG_PATIENT_CSV", f"{DEFAULT_SPR_DIR}/gravniva.csv")
+# Dated long tables (one row per diagnosis/procedure code) from the same export.
+DEFAULT_MOTHER_DIAG_CSV = f"{DEFAULT_SPR_DIR}/fv1_moderns_diagnoser.csv"
+DEFAULT_CHILD_DIAG_CSV = f"{DEFAULT_SPR_DIR}/barn_barnets_diagnoser_forsta_28_dagarna.csv"
+DEFAULT_CHILD_PROC_CSV = f"{DEFAULT_SPR_DIR}/barn_barnets_atgarder_forsta_28_dagarna.csv"
 # SNQ registry data (Excel or CSV).
-DEFAULT_SNQ_FILE = os.environ.get("CTG_SNQ_FILE", "/srv/data/input/iCTG/registry/SNQ data.xlsx")
+DEFAULT_SNQ_FILE = os.environ.get(
+    "CTG_SNQ_FILE", _find_one("SNQ data*.xlsx", f"{DEFAULT_REGISTRY_ROOT}/SNQ data.xlsx")
+)
 # Root directory for staged data reduction outputs.
 DEFAULT_REDUCTION_ROOT = os.environ.get(
     "CTG_REDUCTION_ROOT", "/srv/data/input/iCTG/processed/reduction"

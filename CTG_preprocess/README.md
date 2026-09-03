@@ -28,8 +28,10 @@ paths with environment variables instead of editing the file:
 | Setting | Environment variable | Default |
 |---------|----------------------|---------|
 | Raw CTG parquet from the converter (stage 0) | `CTG_STAGE0_DIR` | `/srv/data/input/iCTG/parquet` |
-| Main registry file (`gravniva.csv`) | `CTG_PATIENT_CSV` | `/srv/data/input/iCTG/registry/gravniva.csv` |
-| SNQ registry file | `CTG_SNQ_FILE` | `/srv/data/input/iCTG/registry/SNQ data.xlsx` |
+| Registry export root | `CTG_REGISTRY_ROOT` | `/srv/data/input/iCTG/CTG_registry_data` |
+| SPR export directory (`gravniva.csv`, `pop.csv`, dated diagnosis tables) | `CTG_SPR_DIR` | first `SPR data*` directory under the root |
+| Main registry file | `CTG_PATIENT_CSV` | `<SPR dir>/gravniva.csv` |
+| SNQ registry file | `CTG_SNQ_FILE` | first `SNQ data*.xlsx` under the root |
 | Root for stage 1-7 outputs | `CTG_REDUCTION_ROOT` | `/srv/data/input/iCTG/processed/reduction` |
 
 Stage settings (session gap, window length, thresholds, BabyID salt) are also in `config.py`.
