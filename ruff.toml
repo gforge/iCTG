@@ -4,7 +4,6 @@ line-length = 100
 target-version = "py312"
 
 extend-exclude = [
-    "CTG_preprocess/legacy",
     "**/.venv",
     "**/artifacts*",
 ]

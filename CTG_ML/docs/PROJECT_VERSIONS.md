@@ -28,16 +28,12 @@ Use this for new experiments.
 
 ## Legacy
 
-### CTG2 multimodal
-- Config: `configs/ctg2_multimodal.toml`
-- Scripts:
-  - `scripts/make_splits_ctg2.py`
-  - `scripts/preprocess_ctg2_multimodal.py`
-  - `scripts/train_ctg2_multimodal.py`
-  - `scripts/run_ctg2_ablation_study.py`
-- Artifacts: `artifacts_ctg2/`
-
-These wrappers are kept for reproducibility and still call the shared multimodal implementation.
+### CTG2 multimodal (removed 2026-09-03)
+The CTG2 config, wrapper scripts (`make_splits_ctg2`, `preprocess_ctg2_multimodal`,
+`train_ctg2_multimodal`, `run_ctg2_ablation_study`), the `ctg2_*` modules and
+`docs/CTG2_MULTIMODAL_ARCHITECTURE.md` were deleted together with `CTG_preprocess/legacy/`.
+They are preserved at the git tag `legacy-last-commit-2026-09-03`; existing `artifacts_ctg2/`
+outputs on disk are unaffected.
 
 ### CTG1/simple binary
 - Config: `configs/default.toml`

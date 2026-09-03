@@ -136,5 +136,6 @@ shifts of a rerun will differ. Stage 3 refuses to run on a DuckDB build without 
 
 - Stage 7 supports SNQ input as `.xlsx`, `.xls`, or `.csv`.
 - `match_loss_report.py` explains why registry births do not end up in the Stage 7 output. It reuses the Stage 7 registry cleaning and day-window rule from `registry_matching.py`, then assigns every registry birth row exactly one category (`registry_row_excluded` with sub-reasons `short_personnummer` / `missing_apgar5` / `missing_birth_day`, `no_ctg_for_patient`, `ctg_only_outside_window`, `dropped_stage4_duplicates`, `dropped_stage5_short_signal`, `multiple_ctg_matches`, `ctg_shared_by_multiple_registry_rows`, `matched`) by walking the Stage 3, Stage 4 and Stage 5.5 outputs. It prints markdown tables of counts and percentages, a histogram of the nearest Stage 3 CTG day offset for the outside-window rows (to judge whether the birth day / day-before window is too tight) and per-birth-year counts; only counts are printed, never PatientIDs or BabyIDs. Run it after Stage 5.5 with `uv run python match_loss_report.py` (defaults from `config.py`; override with `--registry-csv`, `--stage3`, `--stage4`, `--stage5-5`; `--out report.md` also writes the markdown to a file; `--no-progress` disables the DuckDB progress bar).
-- Legacy experiments and old scripts are kept in `legacy/`.
+- The old `legacy/` experiments were removed on 2026-09-03; see git tag
+  `legacy-last-commit-2026-09-03` if you need them.
 - Local analysis utilities and generated artifacts are not part of the main pipeline.

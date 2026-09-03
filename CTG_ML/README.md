@@ -137,8 +137,9 @@ Design notes:
 These are kept so earlier results can still be inspected or reproduced, but new work should start from the CTG3 workflow above.
 
 - CTG1/simple binary workflow: `configs/default.toml`, `scripts/make_splits.py`, `scripts/preprocess_tcn.py`, `scripts/train_tcn.py`
-- CTG2 multimodal workflow: `configs/ctg2_multimodal.toml`, `scripts/make_splits_ctg2.py`, `scripts/preprocess_ctg2_multimodal.py`, `scripts/train_ctg2_multimodal.py`
-- CTG2 ablation tooling: `scripts/run_ctg2_ablation_study.py`
+- CTG2 multimodal workflow and ablation tooling: removed on 2026-09-03; the last commit that
+  contains them is tagged `legacy-last-commit-2026-09-03`
+  (`git checkout legacy-last-commit-2026-09-03 -- CTG_ML/scripts/train_ctg2_multimodal.py` etc.)
 - Canonical shared implementation for new work: `src/ctg_ml/multimodal_config.py`, `src/ctg_ml/multimodal_registry.py`, `src/ctg_ml/multimodal_preprocess.py`
 - Version map: `docs/PROJECT_VERSIONS.md`
 
