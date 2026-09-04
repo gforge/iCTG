@@ -57,14 +57,15 @@ def _source_sql(path: StagePath) -> tuple[str | None, int, int]:
 
     p = Path(path)
     if p.is_dir():
-        dir_files = list(p.rglob("*.parquet"))
+        # Stage 3 keeps the pretraining export (different schema, no PatientID) in an
+        # `all_sessions/` subdirectory; it is not part of the supervised cohort.
+        dir_files = sorted(
+            f for f in p.rglob("*.parquet") if "all_sessions" not in f.relative_to(p).parts
+        )
         if not dir_files:
             return None, 0, 0
-        return (
-            f"read_parquet('{_safe(str(p / '**' / '*.parquet'))}')",
-            len(dir_files),
-            sum(f.stat().st_size for f in dir_files),
-        )
+        source = "read_parquet([" + ",".join(f"'{_safe(str(f))}'" for f in dir_files) + "])"
+        return source, len(dir_files), sum(f.stat().st_size for f in dir_files)
     if p.exists():
         return f"read_parquet('{_safe(str(p))}')", 1, p.stat().st_size
     return None, 0, 0
