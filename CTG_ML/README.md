@@ -56,11 +56,15 @@ Default config:
 
 - `configs/ctg3_multimodal.toml`
 
-The public config uses local placeholder paths under `data/`. Place the CTG and registry
-files there, create symlinks, or edit the `[paths]` section before running:
+The public config uses local placeholder paths under `data/`. On the server,
+`scripts/link_stage8_data.sh` symlinks them to the time-shifted stage 8 deliverable of
+`CTG_preprocess` (it refuses to run if any file is missing). Elsewhere, place the files or
+edit the `[paths]` section:
 
 - `data/CTG3/ctg_final.parquet`
 - `data/CTG3/registry.csv`
+- `data/CTG3/mothers.csv` (BabyID -> MotherID, for mother-level splits)
+- `data/CTG3/ctg_pretrain.parquet` (file or directory of all-sessions buckets, for pretraining)
 
 Workflow:
 
