@@ -149,8 +149,10 @@ def check_bash(command: str, roots: list[str]) -> None:
         if re.search(idiom, low, flags=re.S):
             deny("code idiom returns/prints rows, not aggregates.")
 
-    if touches and re.search(XFER_TOOLS, cmd):
-        m = re.search(XFER_TOOLS, cmd)
+    # File extensions such as ".zip" or ".tar" are not tools; drop them before matching.
+    cmd_no_ext = re.sub(r"\.(zip|tar|gz|xz|zstd|7z)\b", ".", cmd)
+    if touches and re.search(XFER_TOOLS, cmd_no_ext):
+        m = re.search(XFER_TOOLS, cmd_no_ext)
         tool = m.group(1) if m else "tool"
         copy_like = tool in {
             "cp",
