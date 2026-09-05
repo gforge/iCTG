@@ -121,6 +121,24 @@ Options: `--max-days`, `--jitter-min/--jitter-max`, `--no-all-sessions`. Stage 8
 `mothers.csv` (`BabyID`, `MotherID`) for every pregnancy in the CTG data, so `CTG_ML` can
 split by mother and keep siblings of validation/test pregnancies out of pretraining.
 
+### Stage 9: clinician events
+
+The Milou `ExportSignatures_*.json` files (clinician CTG classifications, maternal SpO2 and
+blood pressure, scalp lactate/pH, free-text notes) are converted once with the root project's
+`ictg-signatures` command into `DEFAULT_EVENTS_DIR`:
+
+```bash
+uv run --project .. ictg-signatures '/srv/data/input/iCTG/raw/ExportSignatures_*.json' \
+    --parquet-out /srv/data/input/iCTG/parquet_events
+```
+
+`events.py` then maps every registration to a pregnancy (mother's PatientID plus the time span
+of her sessions, margin `DEFAULT_EVENT_LINK_MARGIN_HOURS`), derives keyword flags from the
+notes (`DEFAULT_EVENT_NOTE_FLAGS`) and writes `stage_8_timeshift/events.parquet`, time-shifted
+with the stage 8 key and without free text or staff names. The first run scans stage 0 for
+the RegistrationID map and caches it under `stage_9_events/`. `run_pipeline.sh` runs it after
+stage 8 and skips it when the events parquet directory does not exist.
+
 ### Secrets
 
 The BabyID salt and the time-shift secret are never in git. They are read from

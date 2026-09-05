@@ -44,6 +44,14 @@ bin/convert.sh "data/*.zip" --parquet-out output/
 
 `uv run python -m ictg.convert.main` is equivalent to `uv run ictg`.
 
+The clinician event exports (`ExportSignatures_*.json`: CTG classifications, maternal SpO2 and
+blood pressure, scalp lactate/pH, notes) are converted separately; `CTG_preprocess` stage 9
+links them to pregnancies:
+
+```bash
+uv run ictg-signatures "data/ExportSignatures_*.json" --parquet-out output_events/
+```
+
 ## Development checks
 
 Lint and formatting use ruff with the shared `ruff.toml` at the repository root; type

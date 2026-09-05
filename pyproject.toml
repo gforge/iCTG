@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 ictg = "ictg.convert.main:convert_raw_ctg"
+ictg-signatures = "ictg.convert.signatures:main"
 
 [dependency-groups]
 dev = [

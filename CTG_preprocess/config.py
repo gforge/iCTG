@@ -62,6 +62,34 @@ DEFAULT_STAGE6_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_6_partitioned"
 DEFAULT_STAGE7_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_7_registrymatching"
 DEFAULT_STAGE7_REGISTRY_CSV = f"{DEFAULT_STAGE7_DIR}/registry.csv"
 DEFAULT_STAGE7_CTG_PARQUET = f"{DEFAULT_STAGE7_DIR}/ctg_final.parquet"
+# Stage 9: clinician events from the ExportSignatures files (converted with `ictg-signatures`).
+DEFAULT_EVENTS_DIR = os.environ.get("CTG_EVENTS_DIR", "/srv/data/input/iCTG/parquet_events")
+DEFAULT_STAGE9_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_9_events"
+# RegistrationID -> PatientID and time span, derived once from stage 0 (slow scan, cached).
+DEFAULT_STAGE9_REGISTRATION_MAP = f"{DEFAULT_STAGE9_DIR}/registration_map.parquet"
+# Events linked to BabyID, still with the free text (intermediate, restricted).
+DEFAULT_STAGE9_EVENTS = f"{DEFAULT_STAGE9_DIR}/events_linked.parquet"
+# Time-shifted deliverable without free text or staff names.
+DEFAULT_STAGE8_EVENTS_PARQUET = f"{DEFAULT_REDUCTION_ROOT}/stage_8_timeshift/events.parquet"
+# A registration is assigned to a pregnancy when it starts within this margin of the
+# pregnancy's session span (all sessions of the pregnancy).
+DEFAULT_EVENT_LINK_MARGIN_HOURS = 24
+# Keyword flags derived from the free-text notes (Swedish clinical shorthand); the raw
+# text never leaves stage 9. Names become boolean columns `note_<name>`.
+DEFAULT_EVENT_NOTE_FLAGS = {
+    "bricanyl": r"bricanyl|terbutalin",
+    "oxytocin": r"oxytocin|syntocinon|synto\b",
+    "amniotomy": r"amniotomi|hinnspr",
+    "scalp_sample": r"skalp|laktat|lactat",
+    "epidural": r"epidural|\beda\b",
+    "c_section": r"sectio|kejsarsnitt|\bsnitt",
+    "vacuum_or_forceps": r"sugklocka|\bve\b|vakuum|tång",
+    "induction": r"misoprostol|cytotec|induktion|induk",
+    "fever_or_infection": r"feber|antibiotika|infektion",
+    "meconium": r"mekonium|meconium",
+    "pushing": r"kryst",
+    "stimulation": r"stimul",
+}
 # Anonymized long tables (BabyID, day_offset relative to birth, code), one row per code.
 DEFAULT_STAGE7_MOTHER_DIAG_CSV = f"{DEFAULT_STAGE7_DIR}/mother_diagnoses.csv"
 DEFAULT_STAGE7_CHILD_DIAG_CSV = f"{DEFAULT_STAGE7_DIR}/child_diagnoses.csv"

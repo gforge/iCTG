@@ -661,6 +661,28 @@ All from `SNQ data.xlsx`, joined on `glopnr`. Missing for every child not admitt
 - Derivation: True if any of: `apgar5 < 7`; arterial cord pH < 7.00; `metabolic_acidosis`; `hie_icd`; `severe_birth_asphyxia`; neonatal death (`died_after_days` recorded); `intubation_min` recorded; SNQ `hie`; `snq_hypothermia_treatment`; `snq_seizures`; SNQ `neonatal_convulsions`; `snq_died`; `snq_resuscitation` (any neonatal resuscitation, >= 1 min, per the clinical lead's decision 2026-09-05; before that only >= 10 min); `snq_hlr_intubation`. SNQ components missing because the child was not admitted count as False.
 - ML-use: intended primary output for intrapartum-hypoxia models; the components are available separately for ablations.
 
+## Clinician events (`events.parquet`, stage 9)
+
+The Milou `ExportSignatures_*.json` files hold events tied to CTG registrations: the clinician's CTG classification, maternal pulse oximetry and blood pressure, fetal scalp lactate and pH, and free-text notes. `ictg-signatures` converts them to parquet, and stage 9 (`events.py`) assigns each registration to the pregnancy (BabyID) of the same mother whose sessions span it. The deliverable `stage_8_timeshift/events.parquet` is time-shifted with the same key as the CTG. Free text and staff names never leave stage 9; the notes are represented by keyword flags.
+
+| Column | Type | Source | Notes |
+|---|---|---|---|
+| `BabyID` | string | | |
+| `Timestamp` | timestamp | `Time`, or `MedicalTime` for lactate | shifted like the CTG |
+| `event_type` | text | `EventType` | `Signature Event`, `Mspo2Event`, `NibpEvent`, `Lactate Event`, `pH Event`, `UserNoteEvent` |
+| `ctg_baseline`, `ctg_variability`, `ctg_accelerations`, `ctg_decelerations` | text | signature event | Milou's category labels (e.g. `110 - 160 spm`, `Inga`) |
+| `ctg_stage` | text | `Stage` | `DeliveryStage`, `Fr o m 34+0`, `28+0 - 33+6`, `Under 28+0` |
+| `ctg_status` | text | `Status` | `Normal`, `Intermediary`, `Pathologically`: the clinician's overall CTG classification |
+| `twin` | text | `Twin` | `One`/`Two` for twin registrations |
+| `maternal_hr`, `maternal_spo2`, `maternal_hr_invalid` | integer / boolean | Mspo2 event | maternal pulse oximetry |
+| `bp_systolic`, `bp_diastolic`, `bp_mean`, `bp_hr` | integer | NIBP event | maternal blood pressure |
+| `scalp_lactate` | float | lactate event | fetal scalp lactate (mmol/l) |
+| `scalp_ph` | float | pH event | fetal scalp pH (rare) |
+| `note_present`, `note_length` | boolean / integer | note event | a note exists and its length |
+| `note_<flag>` | boolean | note text | keyword flags: `bricanyl`, `oxytocin`, `amniotomy`, `scalp_sample`, `epidural`, `c_section`, `vacuum_or_forceps`, `induction`, `fever_or_infection`, `meconium`, `pushing`, `stimulation` (patterns in `config.DEFAULT_EVENT_NOTE_FLAGS`); missing for non-note events |
+
+Events whose registration is unknown in the CTG export (about 8 %) or falls outside every pregnancy span of the mother are dropped; the counts are in `stage_9_events/events_summary.json`. Coverage is much better from 2020 on.
+
 ## Anonymized long tables
 
 `mother_diagnoses.csv`, `child_diagnoses.csv` and `child_procedures.csv` hold the dated SPR long tables restricted to matched babies, with columns `BabyID`, `day_offset` (days from birth; negative = before birth) and `code` (ICD-10-SE diagnosis or KVÅ procedure code, as exported). Maternal diagnoses belong to the same pregnancy (`glopnr` is pregnancy-specific), so a negative offset means an antenatal diagnosis and 0 or -1 a diagnosis recorded around delivery. They are the complete code lists; the flags above are conveniences derived from them.
