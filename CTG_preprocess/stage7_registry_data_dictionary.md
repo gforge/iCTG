@@ -632,7 +632,7 @@ All from `SNQ data.xlsx`, joined on `glopnr`. Missing for every child not admitt
 | `snq_hlr_extra_oxygen`, `snq_hlr_ventilation_mask`, `snq_hlr_cpap`, `snq_hlr_intubation`, `snq_hlr_chest_compressions`, `snq_hlr_adrenaline` | boolean | `HLR_*` | individual resuscitation measures |
 | `snq_cpap`, `snq_high_flow` | boolean | `CPAP`, `Högflödesgrimma` | respiratory support during care |
 | `snq_ventilator_conventional`, `snq_ventilator_hfv`, `snq_ventilator_nava` | boolean | `Resp konv`, `Resp HFV`, `Resp NAVA` | mechanical ventilation modes |
-| `snq_nas`, `snq_pas` | boolean | `NAS`, `PAS` | SNQ respiratory diagnoses as labelled in the export (neonatal respiratory disturbance / pulmonary adaptation disturbance); consult the SNQ manual before use |
+| `snq_nas`, `snq_pas` | boolean | `NAS`, `PAS` | SNQ respiratory diagnoses: NAS = "Lätt neonatal andningsstörning" (mild neonatal respiratory disturbance), PAS = "Pulmonell adaptationsstörning" (pulmonary adaptation disturbance), per the SNQ variable list 2024-03-30 |
 | `snq_mas`, `snq_rds`, `snq_pphn`, `snq_pneumothorax`, `snq_bpd` | boolean | same | meconium aspiration, RDS, persistent pulmonary hypertension, pneumothorax, bronchopulmonary dysplasia |
 | `snq_infection` | boolean | `Barn med infektion` | |
 | `snq_early_culture_verified_sepsis` | boolean | `Tidig bakt. sepsis, odlingsverif. (antal)` | count > 0 |
@@ -658,7 +658,7 @@ All from `SNQ data.xlsx`, joined on `glopnr`. Missing for every child not admitt
 ### `severe_neonatal_outcome`
 - Type: boolean (never missing for matched rows)
 - Source: derived
-- Derivation: True if any of: `apgar5 < 7`; arterial cord pH < 7.00; `metabolic_acidosis`; `hie_icd`; `severe_birth_asphyxia`; neonatal death (`died_after_days` recorded); `intubation_min` recorded; SNQ `hie`; `snq_hypothermia_treatment`; `snq_seizures`; SNQ `neonatal_convulsions`; `snq_died`; `snq_resuscitation_over_10min`; `snq_hlr_intubation`. SNQ components missing because the child was not admitted count as False.
+- Derivation: True if any of: `apgar5 < 7`; arterial cord pH < 7.00; `metabolic_acidosis`; `hie_icd`; `severe_birth_asphyxia`; neonatal death (`died_after_days` recorded); `intubation_min` recorded; SNQ `hie`; `snq_hypothermia_treatment`; `snq_seizures`; SNQ `neonatal_convulsions`; `snq_died`; `snq_resuscitation` (any neonatal resuscitation, >= 1 min, per the clinical lead's decision 2026-09-05; before that only >= 10 min); `snq_hlr_intubation`. SNQ components missing because the child was not admitted count as False.
 - ML-use: intended primary output for intrapartum-hypoxia models; the components are available separately for ablations.
 
 ## Anonymized long tables

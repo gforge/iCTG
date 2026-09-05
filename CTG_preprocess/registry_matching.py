@@ -909,7 +909,7 @@ SEVERE_NEONATAL_OUTCOME_SQL = """
     OR COALESCE(s.snq_seizures, FALSE)
     OR COALESCE(s.neonatal_convulsions, FALSE)
     OR COALESCE(s.snq_died, FALSE)
-    OR COALESCE(s.snq_resuscitation_over_10min, FALSE)
+    OR COALESCE(s.snq_resuscitation, FALSE)
     OR COALESCE(s.snq_hlr_intubation, FALSE)
 )
 """

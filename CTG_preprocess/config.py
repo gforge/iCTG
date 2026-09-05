@@ -51,7 +51,10 @@ DEFAULT_STAGE3_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_3_sessionfilter"
 DEFAULT_STAGE4_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_4_duplicatefilter"
 DEFAULT_STAGE4_OUTPUT_FILE = f"{DEFAULT_STAGE4_DIR}/stage4_dedup.parquet"
 DEFAULT_STAGE4_DUP_THRESHOLD = 0.30
-DEFAULT_STAGE5_MIN_FHR_SECONDS = 1200
+# Minimum seconds of non-zero FHR inside the final window for a pregnancy to be kept.
+# 1200 s (20 min) until 2026-09-05; lowered to 600 s on the clinical lead's decision, the
+# models see the padding mask so they know how much signal is missing.
+DEFAULT_STAGE5_MIN_FHR_SECONDS = 600
 DEFAULT_STAGE5_DIR = f"{DEFAULT_REDUCTION_ROOT}/stage_5_qualityfilter"
 DEFAULT_STAGE5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_quality.parquet"
 DEFAULT_STAGE5_5_OUTPUT_FILE = f"{DEFAULT_STAGE5_DIR}/stage5_5_sorted.parquet"
