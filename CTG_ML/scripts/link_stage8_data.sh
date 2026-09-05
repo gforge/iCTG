@@ -28,6 +28,11 @@ link registry.csv registry.csv
 link ctg_final.parquet ctg_final.parquet
 link mothers.csv mothers.csv
 link all_sessions ctg_pretrain.parquet   # directory of bucket files; the config accepts a directory
+if [ -e "$STAGE8/events.parquet" ]; then
+    link events.parquet events.parquet   # clinician events (stage 9), optional
+else
+    echo "NOTE: no events.parquet in $STAGE8 (stage 9 not run); skipping"
+fi
 
 if [ -e "$STAGE8/timeshift_key.parquet" ]; then
     echo "NOTE: $STAGE8/timeshift_key.parquet re-identifies the dates; it is deliberately not linked."
