@@ -36,6 +36,11 @@ paths with environment variables instead of editing the file:
 
 Stage settings (session gap, window length, thresholds, BabyID salt) are also in `config.py`.
 
+Only the top level of the stage 0 directory is read. Raw exports that turned out to be pure
+re-exports of already converted patients (checked with an aggregate count of new PatientIDs)
+are kept in `raw/duplicates/` and `parquet/duplicates/` so they are neither converted nor
+reduced again; the cohort report ignores those directories too.
+
 ## Pipeline
 
 Run everything (stages 1-7 plus the cohort and match-loss reports) inside tmux:

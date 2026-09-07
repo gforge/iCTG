@@ -58,9 +58,12 @@ def _source_sql(path: StagePath) -> tuple[str | None, int, int]:
     p = Path(path)
     if p.is_dir():
         # Stage 3 keeps the pretraining export (different schema, no PatientID) in an
-        # `all_sessions/` subdirectory; it is not part of the supervised cohort.
+        # `all_sessions/` subdirectory, and stage 0 keeps re-exports that added nothing in
+        # `duplicates/`; neither is part of the supervised cohort (stage 1 reads only the
+        # top level of the raw directory).
+        skip = {"all_sessions", "duplicates"}
         dir_files = sorted(
-            f for f in p.rglob("*.parquet") if "all_sessions" not in f.relative_to(p).parts
+            f for f in p.rglob("*.parquet") if not skip & set(f.relative_to(p).parts)
         )
         if not dir_files:
             return None, 0, 0
