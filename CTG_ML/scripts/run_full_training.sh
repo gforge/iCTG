@@ -15,6 +15,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-configs/ctg3_multimodal.toml}"
+# DuckDB spill space on the data disk (the default .tmp is on the small system disk).
+export CTG_DUCKDB_TEMP_DIR="${CTG_DUCKDB_TEMP_DIR:-/srv/data/input/iCTG/processed/duckdb_tmp}"
 ART="$(uv run --no-sync python -c "from ctg_ml.multimodal_config import load_multimodal_config as l; print(l('$CONFIG').paths.artifacts_dir)")"
 LOG_DIR="$ART/logs"
 mkdir -p "$LOG_DIR"

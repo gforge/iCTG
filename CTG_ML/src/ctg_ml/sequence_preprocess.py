@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+from ctg_ml.duck import connect_duckdb
 
 
 @dataclass(frozen=True)
@@ -147,7 +148,7 @@ def _process_split_chunked(
     y = np.zeros((total_babies,), dtype=np.float32)
     baby_ids = np.empty((total_babies,), dtype=f"<U{int(split_df['BabyID'].str.len().max())}")
 
-    con = duckdb.connect(database=":memory:")
+    con = connect_duckdb()
     kept = 0
     dropped_short = 0
     row_counts: list[int] = []

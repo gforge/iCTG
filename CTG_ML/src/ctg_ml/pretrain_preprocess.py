@@ -18,11 +18,11 @@ import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from ctg_ml.duck import connect_duckdb
 from ctg_ml.multimodal_config import MultimodalPretrainConfig, MultimodalSequenceConfig
 from ctg_ml.multimodal_preprocess import _finalize_sequence, sequence_channel_names
 
@@ -284,6 +284,8 @@ def build_pretrain_windows(
     mothers_csv: str | Path | None = None,
 ) -> PretrainBuildStats:
     source = resolve_parquet_source(pretrain_parquet)
+    source_path = Path(pretrain_parquet)
+    source_files = sorted(source_path.glob("*.parquet")) if source_path.is_dir() else [source_path]
     excluded = load_excluded_baby_ids(splits_csv, allow_no_splits, mothers_csv=mothers_csv)
     win_cfg = pretrain_sequence_config(seq_cfg, pretrain_cfg)
     channel_names = sequence_channel_names(win_cfg)
@@ -295,7 +297,7 @@ def build_pretrain_windows(
     for stale in out_dir.glob(f"{SHARD_PREFIX}_*.npz"):
         stale.unlink()
 
-    con = duckdb.connect(database=":memory:")
+    con = connect_duckdb()
     stats = _RunningStats()
     pending: list[np.ndarray] = []
     pending_babies: list[str] = []
@@ -372,25 +374,30 @@ def build_pretrain_windows(
         con.register(
             "excluded_ids", pd.DataFrame({"BabyID": pd.Series(sorted(excluded), dtype=str)})
         )
-        res = con.execute(PRETRAIN_SQL.format(final_window_expr=final_expr), [source])
-        carry: pd.DataFrame | None = None
-        while True:
-            chunk = res.fetch_df_chunk(vectors_per_chunk=pretrain_cfg.chunk_vectors_per_batch)
-            if chunk is None or chunk.empty:
-                break
+        # One query per bucket file: the stage 3 buckets partition pregnancies, so sorting
+        # a bucket at a time keeps the sort in memory instead of spilling the whole
+        # multi-billion-row export to disk.
+        sql = PRETRAIN_SQL.format(final_window_expr=final_expr)
+        for src_file in source_files:
+            res = con.execute(sql, [str(src_file)])
+            carry: pd.DataFrame | None = None
+            while True:
+                chunk = res.fetch_df_chunk(vectors_per_chunk=pretrain_cfg.chunk_vectors_per_batch)
+                if chunk is None or chunk.empty:
+                    break
+                if carry is not None and not carry.empty:
+                    chunk = pd.concat([carry, chunk], ignore_index=True)
+                    carry = None
+                last_baby = str(chunk["BabyID"].iloc[-1])
+                is_last = chunk["BabyID"].astype(str) == last_baby
+                carry = chunk.loc[is_last].copy()
+                full_chunk = chunk.loc[~is_last]
+                if full_chunk.empty:
+                    continue
+                for _, baby_df in full_chunk.groupby("BabyID", sort=False):
+                    process_baby(baby_df)
             if carry is not None and not carry.empty:
-                chunk = pd.concat([carry, chunk], ignore_index=True)
-                carry = None
-            last_baby = str(chunk["BabyID"].iloc[-1])
-            is_last = chunk["BabyID"].astype(str) == last_baby
-            carry = chunk.loc[is_last].copy()
-            full_chunk = chunk.loc[~is_last]
-            if full_chunk.empty:
-                continue
-            for _, baby_df in full_chunk.groupby("BabyID", sort=False):
-                process_baby(baby_df)
-        if carry is not None and not carry.empty:
-            process_baby(carry)
+                process_baby(carry)
         flush()
     finally:
         pbar.close()

@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from ctg_ml.duck import connect_duckdb
 from ctg_ml.multimodal_config import MultimodalRegistryConfig, MultimodalSequenceConfig
 from ctg_ml.multimodal_registry import (
     MultitaskTargetSpec,
@@ -147,7 +147,7 @@ def _build_split_npz(
     y_bin_mask = np.zeros((total_babies, bin_mask.shape[1]), dtype=np.float32)
     baby_ids = np.empty((total_babies,), dtype=f"<U{int(split_df['BabyID'].str.len().max())}")
 
-    con = duckdb.connect(database=":memory:")
+    con = connect_duckdb()
     kept = 0
     dropped_short = 0
     row_counts: list[int] = []
