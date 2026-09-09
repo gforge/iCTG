@@ -148,8 +148,13 @@ def apply_mask(x_in: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 def masked_reconstruction_loss(
     pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor, valid: torch.Tensor
 ) -> torch.Tensor:
-    """MSE over masked positions where the raw signal was present."""
-    weight = (mask.unsqueeze(1) & valid).to(pred.dtype)
+    """MSE over masked positions where the raw signal was present.
+
+    Everything is accumulated in float32: under autocast ``pred`` is float16, and a float16
+    sum of the weights saturates at 65504 for any realistic batch, which silently drove the
+    loss to ~0 in the first GPU runs.
+    """
+    weight = (mask.unsqueeze(1) & valid).float()
     err = F.mse_loss(pred.float(), target.float(), reduction="none")
     return (err * weight).sum() / weight.sum().clamp_min(1.0)
 

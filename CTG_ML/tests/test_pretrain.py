@@ -179,3 +179,16 @@ def test_loading_encoder_with_wrong_channel_count_raises(tmp_path: Path) -> None
         load_pretrained_encoder(
             _supervised_model(seq_channels=5), encoder_path, expected_channel_names=["a"] * 5
         )
+
+
+def test_loss_is_not_distorted_by_half_precision_predictions() -> None:
+    """Under autocast pred is float16; the weights must still be summed in float32."""
+    batch, steps = 64, 3600
+    target = torch.randn(batch, 2, steps)
+    pred16 = torch.zeros(batch, 2, steps, dtype=torch.float16)
+    mask = torch.ones(batch, steps, dtype=torch.bool)
+    valid = torch.ones(batch, 2, steps, dtype=torch.bool)
+    loss = masked_reconstruction_loss(pred16, target, mask, valid)
+    expected = (target**2).mean()
+    assert torch.isfinite(loss)
+    assert abs(float(loss) - float(expected)) < 0.05
