@@ -156,6 +156,21 @@ These are kept so earlier results can still be inspected or reproduced, but new 
 - The baseline is a sanity check and usually catches data issues early (join problems, leakage, label bugs).
 - CTG3 preprocessing defaults to the last 60 minutes at 1 Hz (3600 steps).
 
+## Experiments and clinical evaluation
+
+- `configs/ctg3_multimodal.toml` is the base (event features from stage 9 as inputs,
+  checkpoint selection on the composite outcome). `configs/ctg3_multimodal_no_interventions.toml`
+  drops the intervention targets; `configs/ctg3_multimodal_180m.toml` uses the stage 8b
+  180-minute history with batch 32 (GPU budget). Regenerate the variants when the base changes.
+- `scripts/run_experiments.sh` queues the seeds, the pretrained-init runs, the registry-only /
+  CTG-only ablations and both variants one at a time (`START_BLOCK=<A..E>` to resume), records
+  every block in `docs/BENCHMARKS.md` and runs the clinical evaluation on the first seed.
+- `scripts/evaluate_clinical.py` turns the per-sample test predictions that
+  `train_multimodal_tcn.py --metrics-out` saves into calibration deciles, Brier scores,
+  sensitivity/PPV at 5/10/20 % flag rates and per-year AUCs.
+- `train_multimodal_tcn.py --eval-checkpoint <pt>` re-evaluates a saved checkpoint without
+  training (used for runs that were trained before `--metrics-out` existed).
+
 ## Benchmarks
 
 `docs/BENCHMARKS.md` tracks test results per run (ROC-AUC / PR-AUC per outcome), rebuilt from
