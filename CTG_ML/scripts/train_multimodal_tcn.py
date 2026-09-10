@@ -539,6 +539,14 @@ def main() -> None:
         help="Override training seed for repeated ablation runs.",
     )
     parser.add_argument(
+        "--eval-checkpoint",
+        default=None,
+        help=(
+            "Skip training: load this checkpoint, evaluate on val/test and write --metrics-out. "
+            "Use it to get per-outcome metrics for a run that was trained without --metrics-out."
+        ),
+    )
+    parser.add_argument(
         "--deterministic",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -748,6 +756,12 @@ def main() -> None:
     run_label = args.run_name.strip() if args.run_name else modality_mode
     safe_run_label = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_label)
     ckpt_path = ckpt_dir / f"best_multimodal_tcn_{safe_run_label}.pt"
+    eval_only = args.eval_checkpoint is not None
+    if eval_only:
+        ckpt_path = Path(args.eval_checkpoint)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+        print(f"Evaluation only: loading {ckpt_path}")
     best_monitor = float("-inf")
     best_monitor_for_stop = float("-inf")
     epochs_since_improve = 0
@@ -770,7 +784,7 @@ def main() -> None:
         )
         print(f"Checkpoint metric: monitor_binary_PR-AUC over {cfg.train.monitor_binary_tasks}")
 
-    for epoch in range(1, cfg.train.epochs + 1):
+    for epoch in range(1, 0 if eval_only else cfg.train.epochs + 1):
         print(f"\nEpoch {epoch}/{cfg.train.epochs}")
         if freeze_encoder_epochs > 0:
             encoder_frozen = epoch <= freeze_encoder_epochs
@@ -940,8 +954,9 @@ def main() -> None:
             break
 
     history_path = cfg.paths.artifacts_dir / f"multimodal_tcn_history_{safe_run_label}.csv"
-    pd.DataFrame(history_rows).to_csv(history_path, index=False)
-    print(f"\nSaved training history to {history_path}")
+    if not eval_only:
+        pd.DataFrame(history_rows).to_csv(history_path, index=False)
+        print(f"\nSaved training history to {history_path}")
 
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state_dict"])

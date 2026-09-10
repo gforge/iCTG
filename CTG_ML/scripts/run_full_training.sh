@@ -36,7 +36,8 @@ run_step() {
             uv run --no-sync python scripts/train_xgboost_registry.py --config "$CONFIG" 2>&1 | tee "$log" ;;
         train_random)
             uv run --no-sync python scripts/train_multimodal_tcn.py --config "$CONFIG" \
-                --run-name random_init --no-progress 2>&1 | tee "$log" ;;
+                --run-name random_init --metrics-out "$ART/metrics_random_init.json" \
+                --no-progress 2>&1 | tee "$log" ;;
         pretrain_preprocess)
             uv run --no-sync python scripts/preprocess_pretrain.py --config "$CONFIG" --no-progress 2>&1 | tee "$log" ;;
         pretrain)
@@ -44,7 +45,8 @@ run_step() {
         train_pretrained)
             uv run --no-sync python scripts/train_multimodal_tcn.py --config "$CONFIG" \
                 --init-encoder "$ART/pretrain/encoder.pt" --freeze-encoder-epochs 2 \
-                --run-name pretrained_init --no-progress 2>&1 | tee "$log" ;;
+                --run-name pretrained_init --metrics-out "$ART/metrics_pretrained_init.json" \
+                --no-progress 2>&1 | tee "$log" ;;
     esac
 }
 
