@@ -33,6 +33,8 @@ from config import (
     DEFAULT_STAGE0_DIR,
     DEFAULT_STAGE3_ALL_SESSIONS_DIR,
     DEFAULT_STAGE3_DIR,
+    DEFAULT_STAGE7_CTG_PARQUET,
+    DEFAULT_STAGE8_EVENT_FEATURES_CSV,
     DEFAULT_STAGE8_EVENTS_PARQUET,
     DEFAULT_STAGE8_KEY_FILE,
     DEFAULT_STAGE9_EVENTS,
@@ -227,6 +229,116 @@ def export_shifted_events(
     return _count(con, f"SELECT COUNT(*) FROM read_parquet('{_safe(out)}')")
 
 
+def build_event_features(
+    con: duckdb.DuckDBPyConnection,
+    linked: str | Path,
+    ctg_final: str | Path,
+    out: str | Path,
+    note_flags: dict[str, str] | None = None,
+) -> int:
+    """One row per matched BabyID with features from the events up to the end of its final
+    CTG window (events after that point could describe the outcome and are excluded).
+
+    Times are expressed relative to the window end (minutes before), so the table carries no
+    absolute timestamps and needs no time shift.
+    """
+    flags = DEFAULT_EVENT_NOTE_FLAGS if note_flags is None else note_flags
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE window_end AS
+        SELECT BabyID, MAX(Timestamp) AS window_end
+        FROM read_parquet('{_safe(ctg_final)}') GROUP BY BabyID
+        """
+    )
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ev_before AS
+        SELECT l.*, date_diff('minute', l.Timestamp, w.window_end) AS minutes_before_end
+        FROM read_parquet('{_safe(linked)}') l
+        JOIN window_end w USING (BabyID)
+        WHERE l.Timestamp <= w.window_end
+          AND l.Timestamp >= w.window_end - INTERVAL 7 DAY
+        """
+    )
+    note_cols = ",\n            ".join(
+        f"BOOL_OR(note_{name}) FILTER (WHERE event_type = 'UserNoteEvent') AS ev_note_{name}"
+        for name in flags
+    )
+    con.execute(
+        f"""
+        COPY (
+            WITH sig AS (
+                SELECT BabyID, ctg_status, ctg_baseline, ctg_variability, ctg_decelerations,
+                       minutes_before_end,
+                       row_number() OVER (PARTITION BY BabyID ORDER BY Timestamp DESC) AS rn
+                FROM ev_before WHERE event_type = 'Signature Event'
+            ),
+            lact AS (
+                SELECT BabyID, scalp_lactate, minutes_before_end,
+                       row_number() OVER (PARTITION BY BabyID ORDER BY Timestamp DESC) AS rn
+                FROM ev_before WHERE event_type = 'Lactate Event' AND scalp_lactate IS NOT NULL
+            ),
+            bp AS (
+                SELECT BabyID, bp_systolic, bp_diastolic, bp_hr,
+                       row_number() OVER (PARTITION BY BabyID ORDER BY Timestamp DESC) AS rn
+                FROM ev_before WHERE event_type = 'NibpEvent' AND bp_systolic IS NOT NULL
+            ),
+            agg AS (
+                SELECT
+                    BabyID,
+                    COUNT(*) FILTER (WHERE event_type = 'Signature Event') AS ev_n_ctg_classifications,
+                    COUNT(*) FILTER (WHERE ctg_status = 'Pathologically') AS ev_n_ctg_pathological,
+                    COUNT(*) FILTER (WHERE ctg_status = 'Intermediary') AS ev_n_ctg_intermediary,
+                    COUNT(*) FILTER (WHERE event_type = 'Lactate Event' AND scalp_lactate IS NOT NULL) AS ev_n_lactate,
+                    MAX(scalp_lactate) AS ev_max_lactate,
+                    MAX(scalp_ph) FILTER (WHERE event_type = 'pH Event') AS ev_last_scalp_ph,
+                    MAX(bp_systolic) AS ev_max_bp_systolic,
+                    MIN(maternal_spo2) FILTER (WHERE maternal_hr_invalid IS NOT TRUE) AS ev_min_maternal_spo2,
+                    MAX(maternal_hr) FILTER (WHERE maternal_hr_invalid IS NOT TRUE) AS ev_max_maternal_hr,
+                    COUNT(*) FILTER (WHERE event_type = 'UserNoteEvent') AS ev_n_notes,
+                    {note_cols}
+                FROM ev_before GROUP BY BabyID
+            )
+            SELECT
+                w.BabyID,
+                COALESCE(a.ev_n_ctg_classifications, 0) AS ev_n_ctg_classifications,
+                COALESCE(a.ev_n_ctg_pathological, 0) AS ev_n_ctg_pathological,
+                COALESCE(a.ev_n_ctg_intermediary, 0) AS ev_n_ctg_intermediary,
+                (COALESCE(a.ev_n_ctg_pathological, 0) > 0) AS ev_any_ctg_pathological,
+                s.ctg_status AS ev_last_ctg_status,
+                s.ctg_baseline AS ev_last_ctg_baseline,
+                s.ctg_variability AS ev_last_ctg_variability,
+                s.ctg_decelerations AS ev_last_ctg_decelerations,
+                s.minutes_before_end AS ev_minutes_since_last_ctg_classification,
+                COALESCE(a.ev_n_lactate, 0) AS ev_n_lactate,
+                l.scalp_lactate AS ev_last_lactate,
+                a.ev_max_lactate,
+                l.minutes_before_end AS ev_minutes_since_last_lactate,
+                a.ev_last_scalp_ph,
+                b.bp_systolic AS ev_last_bp_systolic,
+                b.bp_diastolic AS ev_last_bp_diastolic,
+                b.bp_hr AS ev_last_bp_hr,
+                a.ev_max_bp_systolic,
+                a.ev_min_maternal_spo2,
+                a.ev_max_maternal_hr,
+                COALESCE(a.ev_n_notes, 0) AS ev_n_notes,
+                a.* EXCLUDE (BabyID, ev_n_ctg_classifications, ev_n_ctg_pathological,
+                             ev_n_ctg_intermediary, ev_n_lactate, ev_max_lactate, ev_last_scalp_ph,
+                             ev_max_bp_systolic, ev_min_maternal_spo2, ev_max_maternal_hr, ev_n_notes)
+            FROM window_end w
+            LEFT JOIN agg a USING (BabyID)
+            LEFT JOIN sig s ON s.BabyID = w.BabyID AND s.rn = 1
+            LEFT JOIN lact l ON l.BabyID = w.BabyID AND l.rn = 1
+            LEFT JOIN bp b ON b.BabyID = w.BabyID AND b.rn = 1
+            ORDER BY w.BabyID
+        ) TO '{_safe(out)}' (HEADER, DELIMITER ',')
+        """
+    )
+    return _count(con, f"SELECT COUNT(*) FROM read_csv_auto('{_safe(out)}', header=true)")
+
+
 def run_stage9(
     *,
     events_dir: str | Path = DEFAULT_EVENTS_DIR,
@@ -240,6 +352,8 @@ def run_stage9(
     margin_hours: int = DEFAULT_EVENT_LINK_MARGIN_HOURS,
     note_flags: dict[str, str] | None = None,
     refresh_map: bool = False,
+    ctg_final: str | Path | None = DEFAULT_STAGE7_CTG_PARQUET,
+    features_out: str | Path | None = DEFAULT_STAGE8_EVENT_FEATURES_CSV,
 ) -> dict[str, int]:
     if not Path(events_dir).exists():
         raise FileNotFoundError(
@@ -258,6 +372,12 @@ def run_stage9(
         summary["events_shifted"] = export_shifted_events(con, linked_out, key_file, shifted_out)
     elif shifted_out is not None:
         print(f"Stage 8 key not found ({key_file}); deliverable not written. Run stage 8 first.")
+    if features_out is not None and ctg_final is not None and Path(ctg_final).exists():
+        summary["pregnancies_with_feature_row"] = build_event_features(
+            con, linked_out, ctg_final, features_out, note_flags
+        )
+    elif features_out is not None:
+        print(f"Stage 7 CTG parquet not found ({ctg_final}); event features not written.")
     print(json.dumps(summary, indent=2))
     Path(linked_out).parent.joinpath("events_summary.json").write_text(
         json.dumps(summary, indent=2) + "\n"
@@ -277,6 +397,8 @@ def main() -> None:
     parser.add_argument("--shifted-out", default=DEFAULT_STAGE8_EVENTS_PARQUET)
     parser.add_argument("--margin-hours", type=int, default=DEFAULT_EVENT_LINK_MARGIN_HOURS)
     parser.add_argument("--refresh-map", action="store_true", help="Rebuild the registration map.")
+    parser.add_argument("--ctg-final", default=DEFAULT_STAGE7_CTG_PARQUET)
+    parser.add_argument("--features-out", default=DEFAULT_STAGE8_EVENT_FEATURES_CSV)
     args = parser.parse_args()
     run_stage9(
         events_dir=args.events,
@@ -289,6 +411,8 @@ def main() -> None:
         shifted_out=args.shifted_out,
         margin_hours=args.margin_hours,
         refresh_map=args.refresh_map,
+        ctg_final=args.ctg_final,
+        features_out=args.features_out,
     )
 
 

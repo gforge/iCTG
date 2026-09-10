@@ -28,6 +28,9 @@ link registry.csv registry.csv
 link ctg_final.parquet ctg_final.parquet
 link mothers.csv mothers.csv
 link all_sessions ctg_pretrain.parquet   # directory of bucket files; the config accepts a directory
+for optional in events_features.csv ctg_final_180m.parquet; do
+    if [ -e "$STAGE8/$optional" ]; then link "$optional" "$optional"; else echo "NOTE: no $optional in $STAGE8; skipping"; fi
+done
 if [ -e "$STAGE8/events.parquet" ]; then
     link events.parquet events.parquet   # clinician events (stage 9), optional
 else

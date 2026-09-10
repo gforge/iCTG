@@ -1,7 +1,10 @@
+# Variant B of ctg3_multimodal.toml: interventions (emergency caesarean, fetal distress in
+# labour, delivery mode) are NOT prediction targets. Otherwise identical; regenerate this
+# file from the base config when the base changes (see docs/BENCHMARKS.md).
 [paths]
 ctg_parquet = "data/CTG3/ctg_final.parquet"
 registry_csv = "data/CTG3/registry.csv"
-artifacts_dir = "artifacts_ctg3"
+artifacts_dir = "artifacts_ctg3_no_interventions"
 # Per-BabyID feature tables merged onto the registry (stage 8 events_features.csv: clinician
 # CTG classifications, scalp lactate, blood pressure and note flags up to the window end).
 extra_features_csv = ["data/CTG3/events_features.csv"]
@@ -92,7 +95,7 @@ input_excluded_due_to_leakage = [
 categorical_other_min_frequency = 50
 country_top_k = 15
 apgar_outputs = ["apgar1", "apgar5", "apgar10"]
-categorical_outputs = ["forlossningsslut"]
+categorical_outputs = []
 continuous_outputs = ["ph_navelartar", "ph_navelven"]
 binary_outputs = [
   "ph_navel_below7",
@@ -109,8 +112,6 @@ binary_outputs = [
   "neonatal_care_admission",
   "hie",
   "snq_hypothermia_treatment",
-  "fetal_distress_in_labour",
-  "emergency_c_section",
 ]
 # Outcomes whose missing value means "did not happen": code-derived flags are never missing,
 # and the SNQ variables are missing exactly when the child was not admitted to neonatal
@@ -126,8 +127,6 @@ binary_outputs_missing_as_false = [
   "neonatal_care_admission",
   "hie",
   "snq_hypothermia_treatment",
-  "fetal_distress_in_labour",
-  "emergency_c_section",
 ]
 
 [model]

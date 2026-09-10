@@ -124,7 +124,52 @@ def stage9_inputs(tmp_path: Path) -> dict[str, Path]:
     pq.write_table(
         pa.table({"BabyID": ["A", "C"], "shift_days": [10, -5]}), tmp_path / "key.parquet"
     )
+    # stage 7 ctg_final: A's window ends 11:00, C's ends 12:00 (unshifted, like linked events)
+    pq.write_table(
+        pa.table(
+            {
+                "BabyID": ["A", "A", "C"],
+                "Timestamp": _ts_array(
+                    ["2016-01-10 10:00", "2016-01-10 11:00", "2017-05-05 12:00"]
+                ),
+                "FHR": [140.0, 141.0, 130.0],
+            }
+        ),
+        tmp_path / "ctg_final.parquet",
+    )
     return {"tmp": tmp_path, "stage0": stage0, "stage3": stage3, "all": all_dir, "events": events}
+
+
+def test_event_features_only_use_events_before_the_window_end(
+    stage9_inputs: dict[str, Path],
+) -> None:
+    t = stage9_inputs["tmp"]
+    summary = run_stage9(
+        events_dir=stage9_inputs["events"],
+        stage0_dir=stage9_inputs["stage0"],
+        stage3_dir=stage9_inputs["stage3"],
+        all_sessions_dir=stage9_inputs["all"],
+        registration_map=t / "s9" / "registration_map.parquet",
+        linked_out=t / "s9" / "events_linked.parquet",
+        key_file=t / "key.parquet",
+        shifted_out=None,
+        ctg_final=t / "ctg_final.parquet",
+        features_out=t / "s8" / "events_features.csv",
+    )
+    assert summary["pregnancies_with_feature_row"] == 2
+    f = pd.read_csv(t / "s8" / "events_features.csv").set_index("BabyID")
+    assert "Timestamp" not in f.columns
+    a = f.loc["A"]
+    # A: signature at 2015-12-01 (antenatal, > 7 days before the end) is excluded; the note at
+    # 09:00 and the lactate at 10:30 are before the 11:00 end
+    assert a["ev_n_ctg_classifications"] == 0 and pd.isna(a["ev_last_ctg_status"])
+    assert a["ev_n_lactate"] == 1 and a["ev_last_lactate"] == 4.2
+    assert a["ev_minutes_since_last_lactate"] == 30
+    assert a["ev_n_notes"] == 1 and bool(a["ev_note_bricanyl"]) and bool(a["ev_note_epidural"])
+    c = f.loc["C"]
+    assert (
+        c["ev_last_bp_systolic"] == 120 and c["ev_n_notes"] == 0 and pd.isna(c["ev_note_bricanyl"])
+    )
 
 
 def test_stage9_links_events_and_writes_deliverable(stage9_inputs: dict[str, Path]) -> None:

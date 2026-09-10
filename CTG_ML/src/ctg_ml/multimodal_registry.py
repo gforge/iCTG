@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -49,7 +50,14 @@ def _clean_boolean_series(series: pd.Series) -> pd.Series:
 def load_registry_for_multimodal(
     registry_csv: str,
     registry_cfg: MultimodalRegistryConfig,
+    extra_features_csv: list[str | Path] | None = None,
 ) -> pd.DataFrame:
+    """Registry inputs/outputs for the multimodal model.
+
+    ``extra_features_csv`` are per-BabyID tables (e.g. the stage 8 ``events_features.csv``)
+    left-joined onto the registry; a BabyID absent from a table gets NaN for its columns.
+    Only columns named in the config are kept, so unused feature columns cost nothing.
+    """
     usecols = ["BabyID"]
     usecols += registry_cfg.input_numeric
     usecols += registry_cfg.input_boolean
@@ -59,7 +67,23 @@ def load_registry_for_multimodal(
     usecols += registry_cfg.categorical_outputs
     usecols += registry_cfg.continuous_outputs
     usecols += registry_cfg.binary_outputs
-    df = pd.read_csv(registry_csv, usecols=sorted(set(usecols)))
+    wanted = sorted(set(usecols))
+    registry_header = set(pd.read_csv(registry_csv, nrows=0).columns)
+    df = pd.read_csv(registry_csv, usecols=[c for c in wanted if c in registry_header])
+    for extra in extra_features_csv or []:
+        extra_header = set(pd.read_csv(extra, nrows=0).columns)
+        extra_cols = [c for c in wanted if c in extra_header and c not in df.columns]
+        if not extra_cols:
+            continue
+        extra_df = pd.read_csv(extra, usecols=["BabyID", *extra_cols], dtype={"BabyID": str})
+        if extra_df["BabyID"].duplicated().any():
+            raise ValueError(f"{extra} contains duplicate BabyID rows")
+        df = df.merge(extra_df, on="BabyID", how="left", validate="one_to_one")
+    missing_cols = [c for c in wanted if c not in df.columns]
+    if missing_cols:
+        raise ValueError(
+            f"Configured registry columns not found in any input table: {missing_cols}"
+        )
     if df["BabyID"].duplicated().any():
         dupes = int(df["BabyID"].duplicated().sum())
         raise ValueError(f"registry CSV contains {dupes} duplicate BabyID rows")

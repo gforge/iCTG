@@ -11,6 +11,9 @@ class MultimodalPathsConfig:
     ctg_parquet: Path
     registry_csv: Path
     artifacts_dir: Path
+    # Optional per-BabyID feature tables merged onto the registry (e.g. stage 8
+    # events_features.csv). Columns are used only if listed under [registry] inputs.
+    extra_features_csv: list[Path] | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +181,8 @@ def load_multimodal_config(
             ctg_parquet=Path(raw["paths"]["ctg_parquet"]),
             registry_csv=Path(raw["paths"]["registry_csv"]),
             artifacts_dir=Path(raw["paths"]["artifacts_dir"]),
+            extra_features_csv=[Path(str(x)) for x in raw["paths"].get("extra_features_csv", [])]
+            or None,
         ),
         split=MultimodalSplitConfig(
             train_fraction=float(split["train_fraction"]),

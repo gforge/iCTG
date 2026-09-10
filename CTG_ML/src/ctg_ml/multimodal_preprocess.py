@@ -251,6 +251,7 @@ def build_multimodal_npz_files(
     output_dir: str | Path,
     seq_cfg: MultimodalSequenceConfig,
     registry_cfg: MultimodalRegistryConfig,
+    extra_features_csv: list[str | Path] | None = None,
 ) -> list[MultimodalSplitBuildStats]:
     if registry_cfg.input_excluded_due_to_leakage:
         print(
@@ -260,7 +261,7 @@ def build_multimodal_npz_files(
             + "."
         )
     splits_df = pd.read_csv(splits_csv, usecols=["BabyID", "split"])
-    registry_df = load_registry_for_multimodal(str(registry_csv), registry_cfg)
+    registry_df = load_registry_for_multimodal(str(registry_csv), registry_cfg, extra_features_csv)
     merged = merge_splits_with_registry(splits_df, registry_df)
 
     required = {"BabyID", "split"}

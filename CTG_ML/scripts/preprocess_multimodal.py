@@ -47,7 +47,11 @@ def main() -> None:
         output_dir=output_dir,
         seq_cfg=cfg.sequence,
         registry_cfg=cfg.registry,
+        extra_features_csv=[str(p) for p in (cfg.paths.extra_features_csv or []) if p.exists()],
     )
+    for p in cfg.paths.extra_features_csv or []:
+        if not p.exists():
+            print(f"WARNING: extra feature table not found, its columns will be missing: {p}")
 
     print("\nPreprocessing summary")
     for s in stats:

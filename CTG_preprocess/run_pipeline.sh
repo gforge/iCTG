@@ -23,7 +23,7 @@ EVENTS_DIR="$(uv run --no-sync python -c 'import config; print(config.DEFAULT_EV
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 START_STAGE="${START_STAGE:-stage1}"
-STAGES=(stage1 stage2 stage3 stage4 stage5 stage5_5 stage6 stage7 stage8 stage9 reports)
+STAGES=(stage1 stage2 stage3 stage4 stage5 stage5_5 stage6 stage7 stage8 stage8b stage9 reports)
 
 run_stage() {
     local stage="$1"
@@ -37,6 +37,8 @@ run_stage() {
             uv run --no-sync python registry_matching.py --no-progress 2>&1 | tee "$log" ;;
         stage8)
             uv run --no-sync python time_shift.py 2>&1 | tee "$log" ;;
+        stage8b)
+            uv run --no-sync python extended_window.py --minutes 180 2>&1 | tee "$log" ;;
         stage9)
             if [ -d "$EVENTS_DIR" ]; then
                 uv run --no-sync python events.py 2>&1 | tee "$log"

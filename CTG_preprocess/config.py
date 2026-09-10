@@ -71,6 +71,11 @@ DEFAULT_STAGE9_REGISTRATION_MAP = f"{DEFAULT_STAGE9_DIR}/registration_map.parque
 DEFAULT_STAGE9_EVENTS = f"{DEFAULT_STAGE9_DIR}/events_linked.parquet"
 # Time-shifted deliverable without free text or staff names.
 DEFAULT_STAGE8_EVENTS_PARQUET = f"{DEFAULT_REDUCTION_ROOT}/stage_8_timeshift/events.parquet"
+# Per-pregnancy features aggregated from the events up to the end of the final CTG window
+# (no timestamps, so nothing to shift). Joined to registry.csv by BabyID in CTG_ML.
+DEFAULT_STAGE8_EVENT_FEATURES_CSV = (
+    f"{DEFAULT_REDUCTION_ROOT}/stage_8_timeshift/events_features.csv"
+)
 # A registration is assigned to a pregnancy when it starts within this margin of the
 # pregnancy's session span (all sessions of the pregnancy).
 DEFAULT_EVENT_LINK_MARGIN_HOURS = 24

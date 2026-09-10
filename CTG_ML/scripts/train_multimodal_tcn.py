@@ -264,7 +264,10 @@ def evaluate_dataset(
     regression_names: list[str],
     binary_names: list[str],
     monitor_binary_tasks: list[str],
+    collect: dict[str, np.ndarray] | None = None,
 ) -> EvalMetrics:
+    """Evaluate ``loader``. When ``collect`` is a dict, the per-sample binary probabilities,
+    labels and masks (plus the derived Apgar<7 ones) are stored in it for later analysis."""
     model.eval()
     total_loss = 0.0
     total_items = 0
@@ -367,6 +370,15 @@ def evaluate_dataset(
     apgar_expected = (apgar_prob_arr * np.arange(11, dtype=np.float32)[None, None, :]).sum(axis=-1)
     apgar_binary_prob = apgar_prob_arr[:, :, :7].sum(axis=-1)
     apgar_binary_true = (apgar_true_arr < 7).astype(np.int32)
+    if collect is not None:
+        collect["binary_names"] = np.array(binary_names, dtype=str)
+        collect["binary_prob"] = bin_prob_arr
+        collect["binary_true"] = bin_true_arr
+        collect["binary_mask"] = bin_mask_arr
+        collect["apgar_names"] = np.array([f"{n}_below7" for n in apgar_names], dtype=str)
+        collect["apgar_below7_prob"] = apgar_binary_prob
+        collect["apgar_below7_true"] = apgar_binary_true
+        collect["apgar_mask"] = apgar_mask_arr
 
     apgar_metrics: dict[str, dict[str, float]] = {}
     derived_binary_metrics: dict[str, dict[str, float]] = {}
@@ -977,6 +989,7 @@ def main() -> None:
         train_ds.binary_target_names,
         cfg.train.monitor_binary_tasks,
     )
+    test_collect: dict[str, np.ndarray] = {}
     test_metrics = evaluate_dataset(
         model,
         test_loader,
@@ -991,6 +1004,7 @@ def main() -> None:
         train_ds.regression_target_names,
         train_ds.binary_target_names,
         cfg.train.monitor_binary_tasks,
+        collect=test_collect,
     )
     format_eval("VAL", val_metrics)
     format_eval("TEST", test_metrics)
@@ -1015,6 +1029,12 @@ def main() -> None:
         }
         metrics_out.write_text(json.dumps(payload, indent=2))
         print(f"Saved metrics JSON to {metrics_out}")
+        # Per-sample test predictions (BabyID-keyed, no patient data) for calibration and
+        # threshold analyses: scripts/evaluate_clinical.py.
+        test_baby_ids = np.load(test_npz, allow_pickle=False)["baby_ids"].astype(str)
+        pred_path = metrics_out.with_name(metrics_out.stem + "_predictions.npz")
+        np.savez_compressed(pred_path, **{"baby_ids": test_baby_ids, **test_collect})
+        print(f"Saved test predictions to {pred_path}")
 
 
 if __name__ == "__main__":
