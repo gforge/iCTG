@@ -155,3 +155,10 @@ These are kept so earlier results can still be inspected or reproduced, but new 
   `pretrain.mothers_csv` exists, every sibling pregnancy of those mothers as well.
 - The baseline is a sanity check and usually catches data issues early (join problems, leakage, label bugs).
 - CTG3 preprocessing defaults to the last 60 minutes at 1 Hz (3600 steps).
+
+## Benchmarks
+
+`docs/BENCHMARKS.md` tracks test results per run (ROC-AUC / PR-AUC per outcome), rebuilt from
+the JSON files in `benchmarks/`. After a run that wrote `--metrics-out`, record it with
+`uv run python scripts/record_benchmark.py --metrics <metrics.json> --name <run> --cohort <n> --notes "..."`.
+The KTH paper draft (30 871-cohort, five seeds) is entered as the first baseline.

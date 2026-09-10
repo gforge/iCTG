@@ -1,0 +1,29 @@
+{
+  "name": "kth_paper_draft2",
+  "date": "2026-05-31",
+  "commit": "legacy-last-commit-2026-09-03",
+  "cohort": 30871,
+  "split": "BabyID-level 70/15/15",
+  "seeds": 5,
+  "seed": null,
+  "init_encoder": "",
+  "freeze_encoder_epochs": 0,
+  "modality_mode": "multimodal",
+  "notes": "Table 3 of 'Predicting Neonatal Outcomes from CTG and Registry Data Using Multimodal Deep Learning' (L. Uggla, KTH, draft 2): means over five seeds on the pre-fix cohort (20-min signal rule, last-session window, stage 4 duplicate bug).",
+  "summary": {
+    "apgar5_mae": null,
+    "mean_binary_pr_auc": null,
+    "monitor_binary_pr_auc": null
+  },
+  "outcomes": {
+    "apgar1_below7": {"roc_auc": 0.7687, "pr_auc": 0.1557, "prevalence": 0.0478},
+    "apgar5_below7": {"roc_auc": 0.7854, "pr_auc": 0.0854, "prevalence": 0.0114},
+    "apgar10_below7": {"roc_auc": 0.8710, "pr_auc": 0.0547, "prevalence": 0.0019},
+    "ph_navel_below7": {"roc_auc": 0.6841, "pr_auc": 0.0219, "prevalence": 0.0094},
+    "shoulder_dystocia": {"roc_auc": 0.8016, "pr_auc": 0.0686, "prevalence": 0.0125},
+    "treatment_for_hypoglycemia": {"roc_auc": 0.7932, "pr_auc": 0.1609, "prevalence": 0.0218},
+    "neonatal_sepsis_or_pneumonia": {"roc_auc": 0.7470, "pr_auc": 0.1553, "prevalence": 0.0041},
+    "neonatal_anemia": {"roc_auc": 0.9661, "pr_auc": 0.5120, "prevalence": 0.0041},
+    "respiratorbehandling": {"roc_auc": 0.7368, "pr_auc": 0.1368, "prevalence": 0.0268}
+  }
+}
