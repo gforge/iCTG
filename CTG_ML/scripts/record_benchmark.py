@@ -30,11 +30,7 @@ def _git_commit() -> str:
         return "unknown"
 
 
-def entry_from_metrics(
-    metrics_path: Path, name: str, cohort: int | None, seeds: int, notes: str
-) -> dict:
-    payload = json.loads(metrics_path.read_text())
-    test = payload["test_metrics"]
+def _outcomes(test: dict) -> dict[str, dict[str, float]]:
     outcomes: dict[str, dict[str, float]] = {}
     for group in ("derived_binary", "binary"):
         for outcome, values in test.get(group, {}).items():
@@ -44,22 +40,65 @@ def entry_from_metrics(
                     "pr_auc": float(values["pr_auc"]),
                     "prevalence": float(values.get("prevalence", float("nan"))),
                 }
+    return outcomes
+
+
+def _mean_sd(values: list[float]) -> tuple[float, float]:
+    finite = [v for v in values if v == v]
+    if not finite:
+        return float("nan"), float("nan")
+    mean = sum(finite) / len(finite)
+    if len(finite) > 1:
+        sd = (sum((v - mean) ** 2 for v in finite) / (len(finite) - 1)) ** 0.5
+    else:
+        sd = 0.0
+    return mean, sd
+
+
+def entry_from_metrics(
+    metrics_paths: list[Path], name: str, cohort: int | None, seeds: int | None, notes: str
+) -> dict:
+    """One benchmark entry from one or more metrics JSON files (one per seed): outcome
+    metrics are averaged and their standard deviation over seeds is kept."""
+    payloads = [json.loads(p.read_text()) for p in metrics_paths]
+    tests = [p["test_metrics"] for p in payloads]
+    per_run = [_outcomes(t) for t in tests]
+    names: list[str] = []
+    for run in per_run:
+        names += [n for n in run if n not in names]
+    outcomes: dict[str, dict[str, float]] = {}
+    for outcome in names:
+        roc_m, roc_sd = _mean_sd([r[outcome]["roc_auc"] for r in per_run if outcome in r])
+        pr_m, pr_sd = _mean_sd([r[outcome]["pr_auc"] for r in per_run if outcome in r])
+        prev_m, _ = _mean_sd([r[outcome]["prevalence"] for r in per_run if outcome in r])
+        outcomes[outcome] = {
+            "roc_auc": roc_m,
+            "roc_auc_sd": roc_sd,
+            "pr_auc": pr_m,
+            "pr_auc_sd": pr_sd,
+            "prevalence": prev_m,
+        }
+    first = payloads[0]
+
+    def mean_of(key: str) -> float:
+        return _mean_sd([float(t.get(key, float("nan"))) for t in tests])[0]
+
     return {
         "name": name,
         "date": date.today().isoformat(),
         "commit": _git_commit(),
         "cohort": cohort,
         "split": "mother-level 70/15/15",
-        "seeds": seeds,
-        "seed": payload.get("seed"),
-        "init_encoder": payload.get("init_encoder") or "",
-        "freeze_encoder_epochs": payload.get("freeze_encoder_epochs"),
-        "modality_mode": payload.get("modality_mode"),
+        "seeds": seeds if seeds is not None else len(payloads),
+        "seed_values": [p.get("seed") for p in payloads],
+        "init_encoder": first.get("init_encoder") or "",
+        "freeze_encoder_epochs": first.get("freeze_encoder_epochs"),
+        "modality_mode": first.get("modality_mode"),
         "notes": notes,
         "summary": {
-            "apgar5_mae": test.get("apgar5_mae"),
-            "mean_binary_pr_auc": test.get("mean_binary_pr_auc"),
-            "monitor_binary_pr_auc": test.get("monitor_binary_pr_auc"),
+            "apgar5_mae": mean_of("apgar5_mae"),
+            "mean_binary_pr_auc": mean_of("mean_binary_pr_auc"),
+            "monitor_binary_pr_auc": mean_of("monitor_binary_pr_auc"),
         },
         "outcomes": outcomes,
     }
@@ -115,7 +154,13 @@ def render_markdown(entries: list[dict]) -> str:
         cells = []
         for e in entries:
             v = e.get("outcomes", {}).get(outcome)
-            cells.append(f"{v['roc_auc']:.3f} / {v['pr_auc']:.3f}" if v else "")
+            sd = v.get("pr_auc_sd") if v else None
+            if not v:
+                cells.append("")
+            elif sd and sd == sd:
+                cells.append(f"{v['roc_auc']:.3f} / {v['pr_auc']:.3f} ±{sd:.3f}")
+            else:
+                cells.append(f"{v['roc_auc']:.3f} / {v['pr_auc']:.3f}")
         lines.append(f"| {outcome} | {prev} | " + " | ".join(cells) + " |")
     lines.append("")
     return "\n".join(lines)
@@ -126,13 +171,15 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "--metrics", help="metrics JSON written by train_multimodal_tcn.py --metrics-out"
+        "--metrics",
+        nargs="+",
+        help="metrics JSON file(s) from train_multimodal_tcn.py --metrics-out; several = seeds",
     )
     parser.add_argument("--name", help="short run name (becomes part of the file name)")
     parser.add_argument(
         "--cohort", type=int, default=None, help="number of pregnancies in the cohort"
     )
-    parser.add_argument("--seeds", type=int, default=1)
+    parser.add_argument("--seeds", type=int, default=None, help="default: number of files")
     parser.add_argument("--notes", default="")
     parser.add_argument("--render-only", action="store_true", help="only regenerate the markdown")
     args = parser.parse_args()
@@ -142,7 +189,7 @@ def main() -> None:
         if not args.metrics or not args.name:
             parser.error("--metrics and --name are required unless --render-only")
         entry = entry_from_metrics(
-            Path(args.metrics), args.name, args.cohort, args.seeds, args.notes
+            [Path(m) for m in args.metrics], args.name, args.cohort, args.seeds, args.notes
         )
         out = BENCH_DIR / f"{entry['date']}_{args.name}.json"
         out.write_text(json.dumps(entry, indent=2) + "\n")
