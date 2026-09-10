@@ -683,6 +683,14 @@ The Milou `ExportSignatures_*.json` files hold events tied to CTG registrations:
 
 Events whose registration is unknown in the CTG export (about 8 %) or falls outside every pregnancy span of the mother are dropped; the counts are in `stage_9_events/events_summary.json`. Coverage is much better from 2020 on.
 
+## Event features (`events_features.csv`, stage 9)
+
+One row per matched BabyID, aggregated from the linked events that occurred up to the end of the final CTG window and at most seven days before it. Events after the window end are excluded because they may describe the outcome. Times are minutes before the window end, so the file needs no time shift. Columns: `ev_n_ctg_classifications`, `ev_n_ctg_pathological`, `ev_n_ctg_intermediary`, `ev_any_ctg_pathological`, `ev_last_ctg_status`, `ev_last_ctg_baseline`, `ev_last_ctg_variability`, `ev_last_ctg_decelerations`, `ev_minutes_since_last_ctg_classification`, `ev_n_lactate`, `ev_last_lactate`, `ev_max_lactate`, `ev_minutes_since_last_lactate`, `ev_last_scalp_ph`, `ev_last_bp_systolic`, `ev_last_bp_diastolic`, `ev_last_bp_hr`, `ev_max_bp_systolic`, `ev_min_maternal_spo2`, `ev_max_maternal_hr`, `ev_n_notes` and one `ev_note_<flag>` boolean per note flag (missing when the pregnancy has no note). Pregnancies without events have zero counts and missing values.
+
+## Extended CTG history (`ctg_final_180m.parquet`, stage 8b)
+
+Same columns and BabyIDs as `ctg_final.parquet`, but the last 180 minutes before the end of the final window, cut from all sessions of the pregnancy and time-shifted with the same key. The cohort and the window end are unchanged; sessions may be separated by gaps.
+
 ## Anonymized long tables
 
 `mother_diagnoses.csv`, `child_diagnoses.csv` and `child_procedures.csv` hold the dated SPR long tables restricted to matched babies, with columns `BabyID`, `day_offset` (days from birth; negative = before birth) and `code` (ICD-10-SE diagnosis or KVÅ procedure code, as exported). Maternal diagnoses belong to the same pregnancy (`glopnr` is pregnancy-specific), so a negative offset means an antenatal diagnosis and 0 or -1 a diagnosis recorded around delivery. They are the complete code lists; the flags above are conveniences derived from them.

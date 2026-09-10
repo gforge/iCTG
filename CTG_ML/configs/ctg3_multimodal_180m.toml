@@ -1,0 +1,207 @@
+# Variant C of ctg3_multimodal.toml: the model sees the last 180 minutes before the end of
+# the final window (stage 8b ctg_final_180m.parquet). batch_size 32 keeps activations
+# within the ~4 GB GPU budget; the pretraining section is unchanged (60-min windows).
+# Regenerate from the base config when the base changes.
+[paths]
+ctg_parquet = "data/CTG3/ctg_final_180m.parquet"
+registry_csv = "data/CTG3/registry.csv"
+artifacts_dir = "artifacts_ctg3_180m"
+# Per-BabyID feature tables merged onto the registry (stage 8 events_features.csv: clinician
+# CTG classifications, scalp lactate, blood pressure and note flags up to the window end).
+extra_features_csv = ["data/CTG3/events_features.csv"]
+
+[split]
+train_fraction = 0.70
+val_fraction = 0.15
+test_fraction = 0.15
+random_seed = 42
+
+[sequence]
+window_minutes = 180
+sample_rate_hz = 1
+pad_short = true
+treat_fhr_zero_as_missing = true
+treat_toco_zero_as_missing = true
+include_padding_mask = true
+include_signal_quality_channels = true
+# Green is the implicit baseline when both of these are 0.
+quality_levels = ["Y", "R"]
+output_dir = "artifacts_ctg3_180m/tcn_multimodal_180m"
+chunk_vectors_per_batch = 64
+
+[registry]
+# Inputs represent information considered available around the last hour before birth.
+input_numeric = [
+  "maternal_age",
+  "gestational_days",
+  "etablerade_varkar_seconds",
+  "para_mhv1",
+  "langd_inskrivning_cm",
+  "bmi_inskrivning",
+  "alkohol_audit_poang",
+  # clinician events before the window end (events_features.csv)
+  "ev_n_ctg_classifications",
+  "ev_n_ctg_pathological",
+  "ev_n_ctg_intermediary",
+  "ev_minutes_since_last_ctg_classification",
+  "ev_n_lactate",
+  "ev_last_lactate",
+  "ev_max_lactate",
+  "ev_minutes_since_last_lactate",
+  "ev_last_bp_systolic",
+  "ev_last_bp_diastolic",
+  "ev_max_maternal_hr",
+  "ev_min_maternal_spo2",
+]
+input_boolean = [
+  "is_smoker",
+  "diabetes_mellitus",
+  "previous_c_section",
+  "is_girl",
+  "gestational_hypertension_without_significant_proteinuria",
+  "preeclampsia",
+  "gestational_or_pregestational_diabetes",
+  "heavy_vaginal_bleeding_before_or_during_delivery",
+  "labor_dystocia",
+  "use_of_oxytocin",
+  # stage 7 (September 2026) additions known before/at admission
+  "induced_labour",
+  "epidural",
+  "ctg_admission_test_abnormal",
+  "ivf_graviditet",
+  "kronisk_hypertoni",
+  # clinician events before the window end (events_features.csv)
+  "ev_any_ctg_pathological",
+  "ev_note_bricanyl",
+  "ev_note_oxytocin",
+  "ev_note_amniotomy",
+  "ev_note_scalp_sample",
+  "ev_note_epidural",
+  "ev_note_fever_or_infection",
+  "ev_note_meconium",
+]
+input_categorical = [
+  "forlossningsstart",
+  "fodelseland",
+  "utbildningsniva",
+  "tobak_3_manader_fore_graviditet",
+  "tobak_inskrivning",
+  "tobak_vecka_30_32",
+  "ev_last_ctg_status",
+  "ev_last_ctg_decelerations",
+  "ev_last_ctg_variability",
+]
+input_excluded_due_to_leakage = [
+]
+categorical_other_min_frequency = 50
+country_top_k = 15
+apgar_outputs = ["apgar1", "apgar5", "apgar10"]
+categorical_outputs = ["forlossningsslut"]
+continuous_outputs = ["ph_navelartar", "ph_navelven"]
+binary_outputs = [
+  "ph_navel_below7",
+  "shoulder_dystocia",
+  "treatment_for_hypoglycemia",
+  "neonatal_sepsis_or_pneumonia",
+  "neonatal_anemia",
+  "respiratorbehandling",
+  # stage 7 (September 2026) outcomes, see CTG_preprocess/stage7_registry_data_dictionary.md
+  "severe_neonatal_outcome",
+  "metabolic_acidosis",
+  "ph_navel_below705",
+  "birth_asphyxia_any",
+  "neonatal_care_admission",
+  "hie",
+  "snq_hypothermia_treatment",
+  "fetal_distress_in_labour",
+  "emergency_c_section",
+]
+# Outcomes whose missing value means "did not happen": code-derived flags are never missing,
+# and the SNQ variables are missing exactly when the child was not admitted to neonatal
+# care (neonatal_care_admission = false). Cord-gas outcomes stay missing-aware.
+binary_outputs_missing_as_false = [
+  "shoulder_dystocia",
+  "treatment_for_hypoglycemia",
+  "neonatal_sepsis_or_pneumonia",
+  "neonatal_anemia",
+  "respiratorbehandling",
+  "severe_neonatal_outcome",
+  "birth_asphyxia_any",
+  "neonatal_care_admission",
+  "hie",
+  "snq_hypothermia_treatment",
+  "fetal_distress_in_labour",
+  "emergency_c_section",
+]
+
+[model]
+tcn_channels = [32, 32, 64, 64, 64, 128, 128, 128]
+kernel_size = 7
+dropout = 0.1
+tabular_hidden_dim = 64
+fusion_hidden_dim = 128
+
+[train]
+learning_rate = 0.0005
+batch_size = 32
+epochs = 100
+weight_decay = 0.0001
+# Tempered inverse-frequency class weighting for Apgar 0..10 classification.
+# 0.0 disables weighting; 0.5 is a conservative first pass.
+apgar_class_weight_power = 0.0
+regression_loss_weight = 1.0
+binary_loss_weight = 2.0
+gradient_clip_norm = 1.0
+use_amp = true
+seed = 51
+deterministic = false
+# Early stopping / checkpoint selection: the composite outcome is the primary target, the
+# others are its most informative components. Rare outcomes are reported but do not steer.
+monitor_binary_tasks = [
+  "severe_neonatal_outcome",
+  "apgar5_below7",
+  "neonatal_care_admission",
+  "metabolic_acidosis",
+]
+early_stopping_enabled = true
+early_stopping_min_epochs = 10
+early_stopping_patience = 10
+early_stopping_min_delta = 0.0005
+# Self-supervised initialisation of the TCN sequence encoder (see [pretrain]).
+# Empty string = random init. `--init-encoder PATH` on the CLI overrides this.
+init_encoder = ""
+# Keep the sequence encoder frozen for the first N supervised epochs (0 = never frozen).
+freeze_encoder_epochs = 0
+
+[pretrain]
+# Self-supervised masked-reconstruction pretraining of the TCN sequence encoder on
+# unlabeled CTG windows from ALL sessions of ALL pregnancies (antenatal and earlier
+# labour sessions). Either a single parquet file or a directory of *.parquet buckets.
+pretrain_parquet = "data/CTG3/ctg_pretrain.parquet"
+# BabyID -> MotherID for every pregnancy (stage 8 `mothers.csv`). With it, pretraining also
+# excludes the siblings of val/test pregnancies, not only the val/test BabyIDs themselves.
+mothers_csv = "data/CTG3/mothers.csv"
+window_minutes = 60
+stride_minutes = 30
+# Windows need at least this fraction of non-missing (non-zero) FHR samples.
+min_signal_fraction = 0.5
+# Fraction of timesteps whose FHR/toco inputs are zeroed, in contiguous spans.
+mask_ratio = 0.3
+mask_span_seconds = 30
+epochs = 30
+batch_size = 64
+lr = 0.001
+weight_decay = 0.0001
+# Drop windows overlapping the supervised last-hour window (`in_final_window` rows).
+exclude_final_window = true
+seed = 51
+# Outputs go to `<paths.artifacts_dir>/<out_subdir>/` (shards, metadata, encoder.pt).
+out_subdir = "pretrain"
+# Fraction of pretraining BabyIDs held out for early stopping on reconstruction loss.
+val_fraction = 0.1
+early_stopping_patience = 5
+windows_per_shard = 2048
+chunk_vectors_per_batch = 64
+decoder_hidden_dim = 64
+decoder_kernel_size = 9
+use_amp = true
