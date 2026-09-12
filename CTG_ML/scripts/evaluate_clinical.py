@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
 
 FLAG_RATES = (0.05, 0.10, 0.20)
@@ -58,7 +59,21 @@ def at_flag_rate(y: np.ndarray, p: np.ndarray, rate: float) -> dict[str, float]:
     }
 
 
-def evaluate_outcome(name: str, y: np.ndarray, p: np.ndarray) -> dict:
+def calibrate(p_val: np.ndarray, y_val: np.ndarray, p_test: np.ndarray) -> np.ndarray:
+    """Isotonic calibration fitted on the validation split, applied to the test scores.
+
+    The training loss up-weights positives (pos_weight), so raw sigmoid outputs are risk
+    *scores*, not probabilities; ranking metrics are unaffected, Brier and the calibration
+    deciles are computed on the calibrated values when validation predictions are given.
+    """
+    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    iso.fit(p_val, y_val)
+    return np.asarray(iso.predict(p_test), dtype=float)
+
+
+def evaluate_outcome(
+    name: str, y: np.ndarray, p: np.ndarray, calibrated: np.ndarray | None = None
+) -> dict:
     n_pos = int(y.sum())
     result: dict = {
         "outcome": name,
@@ -71,10 +86,13 @@ def evaluate_outcome(name: str, y: np.ndarray, p: np.ndarray) -> dict:
         return result
     result["roc_auc"] = float(roc_auc_score(y, p))
     result["pr_auc"] = float(average_precision_score(y, p))
-    result["brier"] = float(brier_score_loss(y, p))
+    result["brier_raw"] = float(brier_score_loss(y, p))
+    q = calibrated if calibrated is not None else p
+    result["calibrated"] = calibrated is not None
+    result["brier"] = float(brier_score_loss(y, q))
     result["brier_baseline"] = float(y.mean() * (1 - y.mean()))
-    result["mean_predicted"] = float(p.mean())
-    result["calibration"] = calibration_table(y, p).to_dict("records")
+    result["mean_predicted"] = float(q.mean())
+    result["calibration"] = calibration_table(y, q).to_dict("records")
     result["flag_rates"] = [at_flag_rate(y, p, r) for r in FLAG_RATES]
     return result
 
@@ -102,21 +120,24 @@ def render(results: list[dict], years: dict[str, list[dict]], source: str) -> st
     lines += [
         "Test split. Sensitivity and PPV are reported at fixed flag rates (share of births",
         "the model would flag); Brier baseline is the score of predicting the prevalence.",
+        "Brier and the calibration deciles use isotonic calibration fitted on the validation",
+        "split when validation predictions are available (raw scores are up-weighted by the",
+        "training loss and are not probabilities); Brier (raw) is given for reference.",
         "Years are the time-shifted birth years, so they are approximate (+/- 1 year).",
         "",
-        "| Outcome | Positives | Prevalence | ROC-AUC | PR-AUC | Brier (baseline) | Sens@5% | PPV@5% | Sens@10% | PPV@10% | Sens@20% | PPV@20% |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Outcome | Positives | Prevalence | ROC-AUC | PR-AUC | Brier (baseline) | Brier raw | Sens@5% | PPV@5% | Sens@10% | PPV@10% | Sens@20% | PPV@20% |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in results:
         if "skipped" in r:
             lines.append(
-                f"| {r['outcome']} | {r['positives']} | {100 * r['prevalence']:.2f} % | skipped: {r['skipped']} |||||||||"
+                f"| {r['outcome']} | {r['positives']} | {100 * r['prevalence']:.2f} % | skipped: {r['skipped']} ||||||||||"
             )
             continue
         fr = {f["flag_rate"]: f for f in r["flag_rates"]}
         lines.append(
             f"| {r['outcome']} | {r['positives']} | {100 * r['prevalence']:.2f} % | {r['roc_auc']:.3f} | {r['pr_auc']:.3f} | "
-            f"{r['brier']:.4f} ({r['brier_baseline']:.4f}) | "
+            f"{r['brier']:.4f} ({r['brier_baseline']:.4f}) | {r['brier_raw']:.4f} | "
             + " | ".join(f"{fr[k]['sensitivity']:.2f} | {fr[k]['ppv']:.2f}" for k in FLAG_RATES)
             + " |"
         )
@@ -158,6 +179,12 @@ def main() -> None:
     )
     parser.add_argument("--predictions", required=True)
     parser.add_argument(
+        "--val-predictions",
+        default=None,
+        help="validation predictions npz; when given, isotonic calibration is fitted on it "
+        "(default: the *_val_predictions.npz next to --predictions if it exists)",
+    )
+    parser.add_argument(
         "--registry", default=None, help="registry.csv with birth_day for the per-year table"
     )
     parser.add_argument(
@@ -183,7 +210,32 @@ def main() -> None:
                 data[prob_key][valid, i].astype(float),
             )
 
-    results = [evaluate_outcome(name, y, p) for name, (y, p) in outcomes.items()]
+    val_path = (
+        Path(args.val_predictions)
+        if args.val_predictions
+        else Path(str(args.predictions).replace("_predictions.npz", "_val_predictions.npz"))
+    )
+    val_outcomes: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    if val_path.exists() and val_path != Path(args.predictions):
+        vdata = np.load(val_path, allow_pickle=False)
+        for names_key, prob_key, true_key, mask_key in (
+            ("apgar_names", "apgar_below7_prob", "apgar_below7_true", "apgar_mask"),
+            ("binary_names", "binary_prob", "binary_true", "binary_mask"),
+        ):
+            for i, name in enumerate(vdata[names_key].astype(str)):
+                valid = vdata[mask_key][:, i] > 0
+                val_outcomes[name] = (
+                    vdata[true_key][valid, i].astype(int),
+                    vdata[prob_key][valid, i].astype(float),
+                )
+        print(f"Isotonic calibration fitted on {val_path.name}")
+    results = []
+    for name, (y, p) in outcomes.items():
+        cal = None
+        if name in val_outcomes and val_outcomes[name][0].sum() >= MIN_POSITIVES:
+            y_val, p_val = val_outcomes[name]
+            cal = calibrate(p_val, y_val, p)
+        results.append(evaluate_outcome(name, y, p, cal))
 
     years_by_outcome: dict[str, list[dict]] = {}
     if args.registry:

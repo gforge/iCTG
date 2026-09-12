@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Sequential experiment queue for the ~4 GB GPU budget (one training at a time):
+# Sequential experiment queue for the ~4 GB GPU budget (one training at a time).
+# Runs are seeded but not bit-deterministic: torch's deterministic mode made the dilated
+# convolutions ~6x slower on this GPU (9 h per run instead of 1.5 h); seed spread was ±0.003.
 #
 #   A  base config + event features, random init, 3 seeds
 #   B  base config, encoder from the existing pretrained encoder.pt, 3 seeds
@@ -29,7 +31,7 @@ train() {  # train <config> <run-name> <metrics-out> [extra args...]
     if [ -f "$metrics" ]; then log "skip $name (metrics exist)"; return; fi
     log "train $name"
     uv run --no-sync python scripts/train_multimodal_tcn.py --config "$cfg" --run-name "$name" \
-        --metrics-out "$metrics" --deterministic --no-progress "$@" \
+        --metrics-out "$metrics" --no-deterministic --no-progress "$@" \
         2>&1 | tee "$LOG_DIR/${name}_$(date +%Y%m%d_%H%M%S).log" | { grep -E "^Epoch|^TEST|Early stopping|Saved metrics|Error" || true; }
     [ -f "$metrics" ] || { log "FAILED $name (no metrics written)"; exit 1; }
 }

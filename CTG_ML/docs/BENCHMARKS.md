@@ -12,26 +12,27 @@ for PR-AUC equals the prevalence. Single-seed runs are noisier than multi-seed m
 | kth_paper_draft2 | 2026-05-31 | legacy-last-commit-2026-09-03 | 30871 | BabyID-level 70/15/15 | 5 | random | | | Table 3 of 'Predicting Neonatal Outcomes from CTG and Registry Data Using Multimodal Deep Learning' (L. Uggla, KTH, draft 2): means over five seeds on the pre-fix cohort (20-min signal rule, last-session window, stage 4 duplicate bug). |
 | pretrained_init_76855 | 2026-09-10 | fb78d1f | 76855 | mother-level 70/15/15 | 1 | artifacts_ctg3/pretrain/encoder.pt | 0.209 | 0.343 | Same as random_init_76855 but sequence encoder initialised from masked-reconstruction pretraining (466k windows, val loss 0.23), frozen 2 epochs. |
 | random_init_76855 | 2026-09-10 | 8a065fb | 76855 | mother-level 70/15/15 | 1 | random | 0.208 | 0.358 | First run on the rebuilt cohort (stage 3/4 fixes, 10-min signal rule, mother-level split, 15 binary outputs). Random encoder init. |
+| events_random_init | 2026-09-12 | 42831d5 | 76855 | mother-level 70/15/15 | 3 | random | 0.208 | 0.343 | Base config + event features (clinician CTG classification, lactate, BP, note flags), composite-first monitoring, random init. |
 
 ## Per outcome (ROC-AUC / PR-AUC, test)
 
-| Outcome | Prevalence | kth_paper_draft2 | pretrained_init_76855 | random_init_76855 |
-|---|---:|---:|---:|---:|
-| apgar1_below7 | 5.20 % | 0.769 / 0.156 | 0.787 / 0.216 | 0.785 / 0.217 |
-| apgar5_below7 | 1.19 % | 0.785 / 0.085 | 0.802 / 0.104 | 0.802 / 0.106 |
-| apgar10_below7 | 0.29 % | 0.871 / 0.055 | 0.797 / 0.059 | 0.820 / 0.041 |
-| ph_navel_below7 | 0.86 % | 0.684 / 0.022 | 0.723 / 0.064 | 0.728 / 0.039 |
-| shoulder_dystocia | 1.25 % | 0.802 / 0.069 | 0.806 / 0.072 | 0.808 / 0.077 |
-| treatment_for_hypoglycemia | 2.03 % | 0.793 / 0.161 | 0.817 / 0.133 | 0.816 / 0.148 |
-| neonatal_sepsis_or_pneumonia | 0.59 % | 0.747 / 0.155 | 0.825 / 0.171 | 0.827 / 0.196 |
-| neonatal_anemia | 0.31 % | 0.966 / 0.512 | 0.913 / 0.473 | 0.932 / 0.482 |
-| respiratorbehandling | 2.67 % | 0.737 / 0.137 | 0.793 / 0.204 | 0.793 / 0.207 |
-| severe_neonatal_outcome | 4.47 % |  | 0.822 / 0.350 | 0.821 / 0.352 |
-| metabolic_acidosis | 1.80 % |  | 0.733 / 0.065 | 0.732 / 0.051 |
-| ph_navel_below705 | 2.14 % |  | 0.729 / 0.082 | 0.727 / 0.061 |
-| birth_asphyxia_any | 0.93 % |  | 0.808 / 0.061 | 0.802 / 0.061 |
-| neonatal_care_admission | 8.42 % |  | 0.790 / 0.472 | 0.793 / 0.476 |
-| hie | 0.25 % |  | 0.764 / 0.022 | 0.771 / 0.014 |
-| snq_hypothermia_treatment | 0.11 % |  | 0.728 / 0.008 | 0.737 / 0.006 |
-| fetal_distress_in_labour | 7.25 % |  | 0.862 / 0.438 | 0.861 / 0.417 |
-| emergency_c_section | 12.81 % |  | 0.952 / 0.769 | 0.952 / 0.794 |
+| Outcome | Prevalence | kth_paper_draft2 | pretrained_init_76855 | random_init_76855 | events_random_init |
+|---|---:|---:|---:|---:|---:|
+| apgar1_below7 | 5.20 % | 0.769 / 0.156 | 0.787 / 0.216 | 0.785 / 0.217 | 0.789 / 0.219 ±0.002 |
+| apgar5_below7 | 1.19 % | 0.785 / 0.085 | 0.802 / 0.104 | 0.802 / 0.106 | 0.813 / 0.109 ±0.006 |
+| apgar10_below7 | 0.29 % | 0.871 / 0.055 | 0.797 / 0.059 | 0.820 / 0.041 | 0.828 / 0.045 ±0.006 |
+| ph_navel_below7 | 0.86 % | 0.684 / 0.022 | 0.723 / 0.064 | 0.728 / 0.039 | 0.734 / 0.053 ±0.004 |
+| shoulder_dystocia | 1.25 % | 0.802 / 0.069 | 0.806 / 0.072 | 0.808 / 0.077 | 0.804 / 0.056 ±0.001 |
+| treatment_for_hypoglycemia | 2.03 % | 0.793 / 0.161 | 0.817 / 0.133 | 0.816 / 0.148 | 0.820 / 0.148 ±0.008 |
+| neonatal_sepsis_or_pneumonia | 0.59 % | 0.747 / 0.155 | 0.825 / 0.171 | 0.827 / 0.196 | 0.792 / 0.168 ±0.013 |
+| neonatal_anemia | 0.31 % | 0.966 / 0.512 | 0.913 / 0.473 | 0.932 / 0.482 | 0.929 / 0.456 ±0.038 |
+| respiratorbehandling | 2.67 % | 0.737 / 0.137 | 0.793 / 0.204 | 0.793 / 0.207 | 0.789 / 0.201 ±0.001 |
+| severe_neonatal_outcome | 4.47 % |  | 0.822 / 0.350 | 0.821 / 0.352 | 0.822 / 0.353 ±0.003 |
+| metabolic_acidosis | 1.80 % |  | 0.733 / 0.065 | 0.732 / 0.051 | 0.730 / 0.057 ±0.002 |
+| ph_navel_below705 | 2.14 % |  | 0.729 / 0.082 | 0.727 / 0.061 | 0.720 / 0.065 ±0.002 |
+| birth_asphyxia_any | 0.93 % |  | 0.808 / 0.061 | 0.802 / 0.061 | 0.811 / 0.066 ±0.005 |
+| neonatal_care_admission | 8.42 % |  | 0.790 / 0.472 | 0.793 / 0.476 | 0.790 / 0.468 ±0.003 |
+| hie | 0.25 % |  | 0.764 / 0.022 | 0.771 / 0.014 | 0.772 / 0.019 ±0.007 |
+| snq_hypothermia_treatment | 0.11 % |  | 0.728 / 0.008 | 0.737 / 0.006 | 0.700 / 0.011 ±0.005 |
+| fetal_distress_in_labour | 7.25 % |  | 0.862 / 0.438 | 0.861 / 0.417 | 0.867 / 0.447 ±0.007 |
+| emergency_c_section | 12.81 % |  | 0.952 / 0.769 | 0.952 / 0.794 | 0.953 / 0.800 ±0.014 |

@@ -974,6 +974,7 @@ def main() -> None:
     model.load_state_dict(state["model_state_dict"])
     print(f"Loaded best checkpoint by monitor_binary_PR-AUC={state['monitor_binary_pr_auc']:.4f}")
 
+    val_collect: dict[str, np.ndarray] = {}
     val_metrics = evaluate_dataset(
         model,
         val_loader,
@@ -988,6 +989,7 @@ def main() -> None:
         train_ds.regression_target_names,
         train_ds.binary_target_names,
         cfg.train.monitor_binary_tasks,
+        collect=val_collect,
     )
     test_collect: dict[str, np.ndarray] = {}
     test_metrics = evaluate_dataset(
@@ -1035,6 +1037,10 @@ def main() -> None:
         pred_path = metrics_out.with_name(metrics_out.stem + "_predictions.npz")
         np.savez_compressed(pred_path, **{"baby_ids": test_baby_ids, **test_collect})
         print(f"Saved test predictions to {pred_path}")
+        val_baby_ids = np.load(val_npz, allow_pickle=False)["baby_ids"].astype(str)
+        val_pred_path = metrics_out.with_name(metrics_out.stem + "_val_predictions.npz")
+        np.savez_compressed(val_pred_path, **{"baby_ids": val_baby_ids, **val_collect})
+        print(f"Saved validation predictions to {val_pred_path}")
 
 
 if __name__ == "__main__":
