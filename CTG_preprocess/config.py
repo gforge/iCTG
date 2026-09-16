@@ -163,6 +163,7 @@ DEFAULT_PARTITION_COLUMNS = [
     "PatientID",
     "Timestamp",
     "FHR",
+    "fhr_stv",
     "toco",
     *DEFAULT_STAGE2_EXTRA_COLUMNS,
 ]

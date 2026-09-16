@@ -1,0 +1,150 @@
+{
+  "name": "events_pretrained_init",
+  "date": "2026-09-12",
+  "commit": "588f5e3",
+  "cohort": 76855,
+  "split": "mother-level 70/15/15",
+  "seeds": 3,
+  "seed_values": [
+    51,
+    52,
+    53
+  ],
+  "init_encoder": "artifacts_ctg3/pretrain/encoder.pt",
+  "freeze_encoder_epochs": 2,
+  "modality_mode": "multimodal",
+  "notes": "As events_random_init but encoder initialised from masked-reconstruction pretraining (frozen 2 epochs).",
+  "summary": {
+    "apgar5_mae": 0.36938817151359804,
+    "mean_binary_pr_auc": 0.20853487104394208,
+    "monitor_binary_pr_auc": 0.24687416694568684
+  },
+  "outcomes": {
+    "apgar1_below7": {
+      "roc_auc": 0.7899947072072767,
+      "roc_auc_sd": 0.0018961875710111458,
+      "pr_auc": 0.22099767425344694,
+      "pr_auc_sd": 0.002491382337916869,
+      "prevalence": 0.05199336997295647
+    },
+    "apgar5_below7": {
+      "roc_auc": 0.8143958041225069,
+      "roc_auc_sd": 0.002623114408985941,
+      "pr_auc": 0.10944817543985717,
+      "pr_auc_sd": 0.006582951696054553,
+      "prevalence": 0.011949411251635412
+    },
+    "apgar10_below7": {
+      "roc_auc": 0.823157212930636,
+      "roc_auc_sd": 0.0062600562160336866,
+      "pr_auc": 0.05167609011846209,
+      "pr_auc_sd": 0.00471087283714274,
+      "prevalence": 0.00287857641311933
+    },
+    "ph_navel_below7": {
+      "roc_auc": 0.7349639046518232,
+      "roc_auc_sd": 0.0039070882302908285,
+      "pr_auc": 0.06278852281325849,
+      "pr_auc_sd": 0.009508820012028402,
+      "prevalence": 0.008637008991954567
+    },
+    "shoulder_dystocia": {
+      "roc_auc": 0.805967320673203,
+      "roc_auc_sd": 0.0045033021238382875,
+      "pr_auc": 0.06312816243846764,
+      "pr_auc_sd": 0.005339758074031828,
+      "prevalence": 0.01247274313126908
+    },
+    "treatment_for_hypoglycemia": {
+      "roc_auc": 0.8195559565150052,
+      "roc_auc_sd": 0.0018770317215125354,
+      "pr_auc": 0.13389902308093024,
+      "pr_auc_sd": 0.0013902012746032483,
+      "prevalence": 0.020322721325774094
+    },
+    "neonatal_sepsis_or_pneumonia": {
+      "roc_auc": 0.8362352837950131,
+      "roc_auc_sd": 0.009895004240712508,
+      "pr_auc": 0.17110681693303487,
+      "pr_auc_sd": 0.012231210730538278,
+      "prevalence": 0.005931094635848234
+    },
+    "neonatal_anemia": {
+      "roc_auc": 0.9198137732783401,
+      "roc_auc_sd": 0.002247612854270237,
+      "pr_auc": 0.45534469600438937,
+      "pr_auc_sd": 0.013711109907266874,
+      "prevalence": 0.0030527692978630614
+    },
+    "respiratorbehandling": {
+      "roc_auc": 0.7940867508098917,
+      "roc_auc_sd": 0.002924684428112618,
+      "pr_auc": 0.20531999936219283,
+      "pr_auc_sd": 0.003170606253649747,
+      "prevalence": 0.026689925861317052
+    },
+    "severe_neonatal_outcome": {
+      "roc_auc": 0.8233459689982197,
+      "roc_auc_sd": 0.0018566570849435572,
+      "pr_auc": 0.3500011469723454,
+      "pr_auc_sd": 0.005541277217013676,
+      "prevalence": 0.044657653728739644
+    },
+    "metabolic_acidosis": {
+      "roc_auc": 0.7391051685073102,
+      "roc_auc_sd": 0.004914044033475272,
+      "pr_auc": 0.059138640791055935,
+      "pr_auc_sd": 0.0022873428888319034,
+      "prevalence": 0.017968517968517967
+    },
+    "ph_navel_below705": {
+      "roc_auc": 0.7262128455654929,
+      "roc_auc_sd": 0.002095366761978266,
+      "pr_auc": 0.07337345158593628,
+      "pr_auc_sd": 0.00522254845411894,
+      "prevalence": 0.021415049692380502
+    },
+    "birth_asphyxia_any": {
+      "roc_auc": 0.8174531078318271,
+      "roc_auc_sd": 0.0022091875878277375,
+      "pr_auc": 0.06226764661143483,
+      "pr_auc_sd": 0.0016547992620009452,
+      "prevalence": 0.009332751853467073
+    },
+    "neonatal_care_admission": {
+      "roc_auc": 0.7924937248128957,
+      "roc_auc_sd": 0.0019233967153896513,
+      "pr_auc": 0.4689087045794888,
+      "pr_auc_sd": 0.0030764555168283424,
+      "prevalence": 0.08416921064108156
+    },
+    "hie": {
+      "roc_auc": 0.7840515733738588,
+      "roc_auc_sd": 0.008624699605844617,
+      "pr_auc": 0.019220183588231157,
+      "pr_auc_sd": 0.0010229926324403192,
+      "prevalence": 0.0025294374182293937
+    },
+    "snq_hypothermia_treatment": {
+      "roc_auc": 0.7651938526021657,
+      "roc_auc_sd": 0.013773464379672721,
+      "pr_auc": 0.007987024749475139,
+      "pr_auc_sd": 0.0021675691943251387,
+      "prevalence": 0.00113388573920628
+    },
+    "fetal_distress_in_labour": {
+      "roc_auc": 0.8663531350259568,
+      "roc_auc_sd": 0.003482878306882691,
+      "pr_auc": 0.4542194309282785,
+      "pr_auc_sd": 0.00983363789339074,
+      "prevalence": 0.07248146532926297
+    },
+    "emergency_c_section": {
+      "roc_auc": 0.9540375941617855,
+      "roc_auc_sd": 0.0008949412879388747,
+      "pr_auc": 0.7848022885406719,
+      "pr_auc_sd": 0.01217675139242554,
+      "prevalence": 0.12812908853030963
+    }
+  }
+}

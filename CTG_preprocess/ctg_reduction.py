@@ -310,6 +310,46 @@ def _decode_toco_fast(raw: np.ndarray) -> np.ndarray:
     return out
 
 
+def _compute_stv(batch: pa.RecordBatch) -> pa.Array:
+    """Per-second short-term variability: mean absolute difference between consecutive valid
+    ``Hr1_*`` sub-samples (the converter keeps four per second, i.e. 4 Hz).
+
+    A value is valid when it is strictly positive and below 255 (255 marks a dropout in the
+    raw export). With fewer than two valid sub-samples the variability is undefined and the
+    result is null, which the downstream stages treat as missing. This is the classic
+    beat-to-beat variability proxy that the 1 Hz mean in ``FHR`` averages away.
+    """
+    zero = pa.scalar(0)
+    upper = pa.scalar(255)
+    cols: list[pa.Array] = []
+    valid: list[pa.Array] = []
+    for name in FHR_SOURCE_COLUMNS:
+        raw = batch.column(batch.schema.get_field_index(name))
+        col: pa.Array = pc.cast(pc.fill_null(raw, pa.scalar(0, type=raw.type)), pa.float64())
+        cols.append(col)
+        valid.append(pc.and_(pc.greater(col, zero), pc.less(col, upper)))
+
+    diffs: list[pa.Array] = []
+    counts: list[pa.Array] = []
+    for left in range(len(cols) - 1):
+        both: pa.Array = pc.and_(valid[left], valid[left + 1])
+        diffs.append(
+            pc.if_else(both, pc.abs(pc.subtract(cols[left + 1], cols[left])), pa.scalar(0.0))
+        )
+        counts.append(pc.cast(both, pa.float64()))
+    diff_sum: pa.Array = diffs[0]
+    pair_count: pa.Array = counts[0]
+    for diff, count in zip(diffs[1:], counts[1:], strict=True):
+        diff_sum = pc.add(diff_sum, diff)
+        pair_count = pc.add(pair_count, count)
+
+    has_pairs: pa.Array = pc.greater(pair_count, pa.scalar(0.0))
+    safe_count: pa.Array = pc.if_else(has_pairs, pair_count, pa.scalar(1.0))
+    mean_diff: pa.Array = pc.divide(diff_sum, safe_count)
+    stv: pa.Array = pc.if_else(has_pairs, mean_diff, pa.scalar(None, type=pa.float64()))
+    return stv.cast(pa.float32())
+
+
 def _compute_toco(batch: pa.RecordBatch) -> pa.Array:
     """Per-row toco from the base64 ``Toco_Values`` column (4 samples per second).
 
@@ -395,6 +435,7 @@ def stage2_columnfilter(
             ("PatientID", input_schema.field("PatientID").type),
             ("RegistrationID", registration_type),
             ("FHR", pa.float32()),
+            ("fhr_stv", pa.float32()),
             ("toco", pa.float32()),
             *[(name, extra_column_types[name]) for name in extra_columns],
         ]
@@ -447,12 +488,13 @@ def stage2_columnfilter(
         patient_id = batch.column(batch.schema.get_field_index("PatientID"))
         registration_id = _column_or_default(batch, "RegistrationID", registration_type)
         fhr = _compute_fhr(batch)
+        stv = _compute_stv(batch)
         toco = _compute_toco(batch)
         extras = [
             _column_or_default(batch, name, extra_column_types[name]) for name in extra_columns
         ]
         return pa.RecordBatch.from_arrays(
-            [timestamp, patient_id, registration_id, fhr, toco, *extras],
+            [timestamp, patient_id, registration_id, fhr, stv, toco, *extras],
             schema=schema,
         )
 
@@ -754,6 +796,7 @@ STAGE3_SIGNAL_COLUMNS = (
     "RegistrationID",
     "Timestamp",
     "FHR",
+    "fhr_stv",
     "toco",
     "Hr1_SignalQuality",
     "Hr1Mode",
@@ -928,6 +971,7 @@ session_rows AS (
         s.PatientID,
         s.Timestamp,
         s.FHR,
+        s.fhr_stv,
         s.toco,
         s.Hr1_SignalQuality,
         s.Hr1Mode,
@@ -952,6 +996,7 @@ SELECT
         avg(FHR) FILTER (WHERE FHR > 0),
         0
     ) AS FLOAT) AS FHR,
+    CAST(avg(fhr_stv) FILTER (WHERE fhr_stv IS NOT NULL) AS FLOAT) AS fhr_stv,
     CAST(COALESCE(avg(toco) FILTER (WHERE toco BETWEEN 1 AND 99), avg(toco), 0) AS FLOAT) AS toco,
     COALESCE(mode(Hr1_SignalQuality), MIN(Hr1_SignalQuality)) AS Hr1_SignalQuality,
     COALESCE(mode(Hr1Mode), MIN(Hr1Mode)) AS Hr1Mode,
@@ -1087,6 +1132,7 @@ def _stage4_query(dup_threshold: float) -> str:
                 avg(FHR) FILTER (WHERE FHR > 0),
                 0
             ) AS FLOAT) AS FHR,
+            CAST(avg(fhr_stv) FILTER (WHERE fhr_stv IS NOT NULL) AS FLOAT) AS fhr_stv,
             CAST(COALESCE(
                 avg(toco) FILTER (WHERE toco BETWEEN 1 AND 99),
                 avg(toco)

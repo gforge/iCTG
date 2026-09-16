@@ -12,27 +12,32 @@ for PR-AUC equals the prevalence. Single-seed runs are noisier than multi-seed m
 | kth_paper_draft2 | 2026-05-31 | legacy-last-commit-2026-09-03 | 30871 | BabyID-level 70/15/15 | 5 | random | | | Table 3 of 'Predicting Neonatal Outcomes from CTG and Registry Data Using Multimodal Deep Learning' (L. Uggla, KTH, draft 2): means over five seeds on the pre-fix cohort (20-min signal rule, last-session window, stage 4 duplicate bug). |
 | pretrained_init_76855 | 2026-09-10 | fb78d1f | 76855 | mother-level 70/15/15 | 1 | artifacts_ctg3/pretrain/encoder.pt | 0.209 | 0.343 | Same as random_init_76855 but sequence encoder initialised from masked-reconstruction pretraining (466k windows, val loss 0.23), frozen 2 epochs. |
 | random_init_76855 | 2026-09-10 | 8a065fb | 76855 | mother-level 70/15/15 | 1 | random | 0.208 | 0.358 | First run on the rebuilt cohort (stage 3/4 fixes, 10-min signal rule, mother-level split, 15 binary outputs). Random encoder init. |
+| events_pretrained_init | 2026-09-12 | 588f5e3 | 76855 | mother-level 70/15/15 | 3 | artifacts_ctg3/pretrain/encoder.pt | 0.209 | 0.369 | As events_random_init but encoder initialised from masked-reconstruction pretraining (frozen 2 epochs). |
 | events_random_init | 2026-09-12 | 42831d5 | 76855 | mother-level 70/15/15 | 3 | random | 0.208 | 0.343 | Base config + event features (clinician CTG classification, lactate, BP, note flags), composite-first monitoring, random init. |
+| events_ctg_only | 2026-09-13 | 588f5e3 | 76855 | mother-level 70/15/15 | 3 | random | 0.128 | 0.379 | Ablation: tabular input replaced by the train mean (CTG only). |
+| events_registry_only | 2026-09-13 | 588f5e3 | 76855 | mother-level 70/15/15 | 3 | random | 0.175 | 0.365 | Ablation: CTG input zeroed (registry + event features only). |
+| history180_random_init | 2026-09-13 | 588f5e3 | 76855 | mother-level 70/15/15 | 3 | random | 0.209 | 0.337 | Variant C: last 180 minutes before the window end (stage 8b), batch 32, random init. |
+| no_interventions_random_init | 2026-09-13 | 588f5e3 | 76855 | mother-level 70/15/15 | 3 | random | 0.149 | 0.337 | Variant B: emergency CS, fetal distress and delivery mode are not targets (interventions as description only). |
 
 ## Per outcome (ROC-AUC / PR-AUC, test)
 
-| Outcome | Prevalence | kth_paper_draft2 | pretrained_init_76855 | random_init_76855 | events_random_init |
-|---|---:|---:|---:|---:|---:|
-| apgar1_below7 | 5.20 % | 0.769 / 0.156 | 0.787 / 0.216 | 0.785 / 0.217 | 0.789 / 0.219 ±0.002 |
-| apgar5_below7 | 1.19 % | 0.785 / 0.085 | 0.802 / 0.104 | 0.802 / 0.106 | 0.813 / 0.109 ±0.006 |
-| apgar10_below7 | 0.29 % | 0.871 / 0.055 | 0.797 / 0.059 | 0.820 / 0.041 | 0.828 / 0.045 ±0.006 |
-| ph_navel_below7 | 0.86 % | 0.684 / 0.022 | 0.723 / 0.064 | 0.728 / 0.039 | 0.734 / 0.053 ±0.004 |
-| shoulder_dystocia | 1.25 % | 0.802 / 0.069 | 0.806 / 0.072 | 0.808 / 0.077 | 0.804 / 0.056 ±0.001 |
-| treatment_for_hypoglycemia | 2.03 % | 0.793 / 0.161 | 0.817 / 0.133 | 0.816 / 0.148 | 0.820 / 0.148 ±0.008 |
-| neonatal_sepsis_or_pneumonia | 0.59 % | 0.747 / 0.155 | 0.825 / 0.171 | 0.827 / 0.196 | 0.792 / 0.168 ±0.013 |
-| neonatal_anemia | 0.31 % | 0.966 / 0.512 | 0.913 / 0.473 | 0.932 / 0.482 | 0.929 / 0.456 ±0.038 |
-| respiratorbehandling | 2.67 % | 0.737 / 0.137 | 0.793 / 0.204 | 0.793 / 0.207 | 0.789 / 0.201 ±0.001 |
-| severe_neonatal_outcome | 4.47 % |  | 0.822 / 0.350 | 0.821 / 0.352 | 0.822 / 0.353 ±0.003 |
-| metabolic_acidosis | 1.80 % |  | 0.733 / 0.065 | 0.732 / 0.051 | 0.730 / 0.057 ±0.002 |
-| ph_navel_below705 | 2.14 % |  | 0.729 / 0.082 | 0.727 / 0.061 | 0.720 / 0.065 ±0.002 |
-| birth_asphyxia_any | 0.93 % |  | 0.808 / 0.061 | 0.802 / 0.061 | 0.811 / 0.066 ±0.005 |
-| neonatal_care_admission | 8.42 % |  | 0.790 / 0.472 | 0.793 / 0.476 | 0.790 / 0.468 ±0.003 |
-| hie | 0.25 % |  | 0.764 / 0.022 | 0.771 / 0.014 | 0.772 / 0.019 ±0.007 |
-| snq_hypothermia_treatment | 0.11 % |  | 0.728 / 0.008 | 0.737 / 0.006 | 0.700 / 0.011 ±0.005 |
-| fetal_distress_in_labour | 7.25 % |  | 0.862 / 0.438 | 0.861 / 0.417 | 0.867 / 0.447 ±0.007 |
-| emergency_c_section | 12.81 % |  | 0.952 / 0.769 | 0.952 / 0.794 | 0.953 / 0.800 ±0.014 |
+| Outcome | Prevalence | kth_paper_draft2 | pretrained_init_76855 | random_init_76855 | events_pretrained_init | events_random_init | events_ctg_only | events_registry_only | history180_random_init | no_interventions_random_init |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| apgar1_below7 | 5.20 % | 0.769 / 0.156 | 0.787 / 0.216 | 0.785 / 0.217 | 0.790 / 0.221 ±0.002 | 0.789 / 0.219 ±0.002 | 0.739 / 0.156 ±0.002 | 0.739 / 0.185 ±0.002 | 0.785 / 0.217 ±0.004 | 0.768 / 0.203 ±0.004 |
+| apgar5_below7 | 1.19 % | 0.785 / 0.085 | 0.802 / 0.104 | 0.802 / 0.106 | 0.814 / 0.109 ±0.007 | 0.813 / 0.109 ±0.006 | 0.754 / 0.065 ±0.006 | 0.789 / 0.101 ±0.007 | 0.805 / 0.104 ±0.001 | 0.794 / 0.108 ±0.007 |
+| apgar10_below7 | 0.29 % | 0.871 / 0.055 | 0.797 / 0.059 | 0.820 / 0.041 | 0.823 / 0.052 ±0.005 | 0.828 / 0.045 ±0.006 | 0.768 / 0.027 ±0.007 | 0.770 / 0.030 ±0.006 | 0.827 / 0.058 ±0.009 | 0.824 / 0.036 ±0.004 |
+| ph_navel_below7 | 0.86 % | 0.684 / 0.022 | 0.723 / 0.064 | 0.728 / 0.039 | 0.735 / 0.063 ±0.010 | 0.734 / 0.053 ±0.004 | 0.696 / 0.045 ±0.004 | 0.632 / 0.022 ±0.004 | 0.752 / 0.050 ±0.006 | 0.680 / 0.032 ±0.008 |
+| shoulder_dystocia | 1.25 % | 0.802 / 0.069 | 0.806 / 0.072 | 0.808 / 0.077 | 0.806 / 0.063 ±0.005 | 0.804 / 0.056 ±0.001 | 0.747 / 0.042 ±0.001 | 0.774 / 0.047 ±0.001 | 0.812 / 0.067 ±0.007 | 0.794 / 0.052 ±0.004 |
+| treatment_for_hypoglycemia | 2.03 % | 0.793 / 0.161 | 0.817 / 0.133 | 0.816 / 0.148 | 0.820 / 0.134 ±0.001 | 0.820 / 0.148 ±0.008 | 0.707 / 0.090 ±0.001 | 0.814 / 0.136 ±0.008 | 0.818 / 0.150 ±0.003 | 0.809 / 0.137 ±0.004 |
+| neonatal_sepsis_or_pneumonia | 0.59 % | 0.747 / 0.155 | 0.825 / 0.171 | 0.827 / 0.196 | 0.836 / 0.171 ±0.012 | 0.792 / 0.168 ±0.013 | 0.794 / 0.049 ±0.002 | 0.775 / 0.152 ±0.010 | 0.793 / 0.179 ±0.014 | 0.757 / 0.177 ±0.008 |
+| neonatal_anemia | 0.31 % | 0.966 / 0.512 | 0.913 / 0.473 | 0.932 / 0.482 | 0.920 / 0.455 ±0.014 | 0.929 / 0.456 ±0.038 | 0.880 / 0.138 ±0.032 | 0.932 / 0.471 ±0.038 | 0.931 / 0.445 ±0.036 | 0.908 / 0.455 ±0.012 |
+| respiratorbehandling | 2.67 % | 0.737 / 0.137 | 0.793 / 0.204 | 0.793 / 0.207 | 0.794 / 0.205 ±0.003 | 0.789 / 0.201 ±0.001 | 0.732 / 0.112 ±0.002 | 0.757 / 0.181 ±0.005 | 0.791 / 0.206 ±0.001 | 0.779 / 0.189 ±0.002 |
+| severe_neonatal_outcome | 4.47 % |  | 0.822 / 0.350 | 0.821 / 0.352 | 0.823 / 0.350 ±0.006 | 0.822 / 0.353 ±0.003 | 0.739 / 0.172 ±0.005 | 0.791 / 0.331 ±0.002 | 0.819 / 0.352 ±0.002 | 0.806 / 0.346 ±0.002 |
+| metabolic_acidosis | 1.80 % |  | 0.733 / 0.065 | 0.732 / 0.051 | 0.739 / 0.059 ±0.002 | 0.730 / 0.057 ±0.002 | 0.676 / 0.051 ±0.005 | 0.664 / 0.039 ±0.002 | 0.728 / 0.056 ±0.006 | 0.701 / 0.055 ±0.003 |
+| ph_navel_below705 | 2.14 % |  | 0.729 / 0.082 | 0.727 / 0.061 | 0.726 / 0.073 ±0.005 | 0.720 / 0.065 ±0.002 | 0.680 / 0.062 ±0.005 | 0.644 / 0.040 ±0.002 | 0.721 / 0.062 ±0.005 | 0.696 / 0.062 ±0.003 |
+| birth_asphyxia_any | 0.93 % |  | 0.808 / 0.061 | 0.802 / 0.061 | 0.817 / 0.062 ±0.002 | 0.811 / 0.066 ±0.005 | 0.762 / 0.048 ±0.002 | 0.757 / 0.051 ±0.004 | 0.811 / 0.068 ±0.006 | 0.786 / 0.062 ±0.004 |
+| neonatal_care_admission | 8.42 % |  | 0.790 / 0.472 | 0.793 / 0.476 | 0.792 / 0.469 ±0.003 | 0.790 / 0.468 ±0.003 | 0.674 / 0.215 ±0.003 | 0.775 / 0.458 ±0.004 | 0.787 / 0.471 ±0.002 | 0.783 / 0.459 ±0.004 |
+| hie | 0.25 % |  | 0.764 / 0.022 | 0.771 / 0.014 | 0.784 / 0.019 ±0.001 | 0.772 / 0.019 ±0.007 | 0.694 / 0.011 ±0.003 | 0.758 / 0.007 ±0.000 | 0.791 / 0.017 ±0.006 | 0.735 / 0.009 ±0.003 |
+| snq_hypothermia_treatment | 0.11 % |  | 0.728 / 0.008 | 0.737 / 0.006 | 0.765 / 0.008 ±0.002 | 0.700 / 0.011 ±0.005 | 0.593 / 0.004 ±0.001 | 0.736 / 0.003 ±0.000 | 0.740 / 0.004 ±0.001 | 0.664 / 0.003 ±0.001 |
+| fetal_distress_in_labour | 7.25 % |  | 0.862 / 0.438 | 0.861 / 0.417 | 0.866 / 0.454 ±0.010 | 0.867 / 0.447 ±0.007 | 0.814 / 0.365 ±0.007 | 0.801 / 0.296 ±0.002 | 0.868 / 0.448 ±0.013 |  |
+| emergency_c_section | 12.81 % |  | 0.952 / 0.769 | 0.952 / 0.794 | 0.954 / 0.785 ±0.012 | 0.953 / 0.800 ±0.014 | 0.902 / 0.647 ±0.009 | 0.892 / 0.594 ±0.022 | 0.952 / 0.807 ±0.012 |  |

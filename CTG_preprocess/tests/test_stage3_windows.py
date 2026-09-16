@@ -48,6 +48,8 @@ def _connect(rows: list[Row]) -> duckdb.DuckDBPyConnection:
         """
     )
     con.executemany("INSERT INTO ctg VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    # stage 2 short-term variability (4 Hz sub-samples); constant here, checked for pass-through
+    con.execute("ALTER TABLE ctg ADD COLUMN fhr_stv FLOAT DEFAULT 2.5")
     return con
 
 
@@ -139,6 +141,10 @@ def test_all_sessions_export_numbers_sessions_flags_window_and_hides_patientid(
     duplicate = fragmented_labour[-1]
     con = _connect(fragmented_labour + [duplicate])
     con.execute(f"CREATE TABLE all_sessions AS {_all_sessions_query()}")
+    assert con.execute("SELECT MIN(fhr_stv), MAX(fhr_stv) FROM all_sessions").fetchone() == (
+        2.5,
+        2.5,
+    )
     con.execute(f"CREATE TABLE final_window AS {_query('pregnancy')}")
 
     columns = [r[0] for r in con.execute("DESCRIBE all_sessions").fetchall()]
@@ -188,6 +194,10 @@ def test_stage4_ignores_exact_duplicates_but_counts_conflicts() -> None:
         "INSERT INTO ctg VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         rows("exact_dup", 140.0) + rows("conflict", 90.0) + rows("clean", None),
     )
+    con.execute("ALTER TABLE ctg ADD COLUMN fhr_stv FLOAT DEFAULT 2.5")
+    assert con.execute(
+        f"SELECT COUNT(*) FILTER (WHERE fhr_stv <> 2.5 OR fhr_stv IS NULL) FROM ({_stage4_query(0.30)})"
+    ).fetchone() == (0,)
     kept = con.execute(
         f"SELECT BabyID, COUNT(*), MIN(FHR) FROM ({_stage4_query(0.30)}) GROUP BY BabyID ORDER BY 1"
     ).fetchall()

@@ -15,6 +15,7 @@ import pytest
 from ctg_reduction import (
     _build_stage2_shards,
     _compute_fhr,
+    _compute_stv,
     _compute_toco,
     _stage3_babyid_expr,
     _stage3_bucket_expr,
@@ -101,6 +102,26 @@ def test_compute_fhr_does_not_truncate_int16_inputs() -> None:
     fhr = _compute_fhr(batch)
     assert fhr.type == pa.float32()
     assert fhr.to_pylist() == pytest.approx([141.5, 0.0, 0.0])
+
+
+def test_compute_stv_mean_abs_difference_of_consecutive_valid_subsamples() -> None:
+    batch = pa.RecordBatch.from_pydict(
+        {
+            # rows: all valid; one dropout (255) in the middle; single valid; none; int16 input
+            "Hr1_0": pa.array([140, 140, 150, 0, 120], type=pa.int16()),
+            "Hr1_1": pa.array([142, 255, 0, 0, 121], type=pa.int16()),
+            "Hr1_2": pa.array([141, 143, None, 0, 123], type=pa.int16()),
+            "Hr1_3": pa.array([145, 147, 0, None, 126], type=pa.int16()),
+        }
+    )
+    stv = _compute_stv(batch)
+    assert stv.type == pa.float32()
+    values = stv.to_pylist()
+    # |142-140|, |141-142|, |145-141| -> (2+1+4)/3; only pair (2,3) valid -> 4
+    assert values[0] == pytest.approx(7 / 3)
+    assert values[1] == pytest.approx(4.0)
+    assert values[2] is None and values[3] is None
+    assert values[4] == pytest.approx((1 + 2 + 3) / 3)
 
 
 def test_compute_toco_decodes_base64_and_averages_valid_bytes() -> None:

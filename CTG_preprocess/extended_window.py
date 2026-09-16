@@ -21,7 +21,16 @@ from config import (
     DEFAULT_STAGE8_KEY_FILE,
 )
 
-OUTPUT_COLUMNS = ["BabyID", "Timestamp", "FHR", "toco", "Hr1_SignalQuality", "Hr1Mode", "TocoMode"]
+OUTPUT_COLUMNS = [
+    "BabyID",
+    "Timestamp",
+    "FHR",
+    "fhr_stv",
+    "toco",
+    "Hr1_SignalQuality",
+    "Hr1Mode",
+    "TocoMode",
+]
 
 
 def _safe(path: str | Path) -> str:

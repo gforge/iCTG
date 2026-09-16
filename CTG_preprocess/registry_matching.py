@@ -1096,9 +1096,11 @@ def registry_match(
     )
 
     s6_cols = _columns(con, "s6")
-    keep_cols = ["BabyID", "Timestamp", "FHR", "toco"] + [
-        name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in s6_cols
-    ]
+    keep_cols = (
+        ["BabyID", "Timestamp", "FHR", "toco"]
+        + (["fhr_stv"] if "fhr_stv" in s6_cols else [])
+        + [name for name in DEFAULT_STAGE2_EXTRA_COLUMNS if name in s6_cols]
+    )
     ctg_select = ", ".join(f"s6.{name}" for name in keep_cols)
 
     con.execute(
