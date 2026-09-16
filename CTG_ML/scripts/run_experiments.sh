@@ -8,6 +8,7 @@
 #   C  base config, registry-only and CTG-only ablations, 3 seeds
 #   D  variant without intervention targets, 3 seeds
 #   E  variant with 180-minute history, 3 seeds (batch 32)
+#   F  variant with the short-term variability channel, 3 seeds
 #
 # Every run writes --metrics-out (+ per-sample test predictions); each block is recorded in
 # the benchmark history and evaluated clinically on its first seed. Resume with
@@ -109,8 +110,20 @@ block_E() {
     clinical "artifacts_ctg3_180m/metrics_long180_random_s${SEEDS[0]}_predictions.npz" data/CTG3/registry.csv "artifacts_ctg3_180m/clinical_long180_random_s${SEEDS[0]}.md"
 }
 
+block_F() {
+    local STV=configs/ctg3_multimodal_stv.toml
+    preprocess "$STV" artifacts_ctg3_stv
+    local files=()
+    for s in "${SEEDS[@]}"; do
+        train "$STV" "stv_random_s$s" "artifacts_ctg3_stv/metrics_stv_random_s$s.json" --seed-override "$s"
+        files+=("artifacts_ctg3_stv/metrics_stv_random_s$s.json")
+    done
+    record stv_random_init "Base config + short-term FHR variability channel from the 4 Hz sub-samples (fhr_stv), random init." "${files[@]}"
+    clinical "artifacts_ctg3_stv/metrics_stv_random_s${SEEDS[0]}_predictions.npz" data/CTG3/registry.csv "artifacts_ctg3_stv/clinical_stv_random_s${SEEDS[0]}.md"
+}
+
 started=0
-for block in A B C D E; do
+for block in A B C D E F; do
     if [ "$block" = "$START_BLOCK" ]; then started=1; fi
     if [ "$started" -eq 1 ]; then log "==> block $block"; "block_$block"; fi
 done

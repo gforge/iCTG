@@ -18,6 +18,7 @@ from tqdm import tqdm
 from ctg_ml.metrics import compute_binary_metrics
 from ctg_ml.models import MultimodalMultitaskTCN
 from ctg_ml.multimodal_config import load_multimodal_config
+from ctg_ml.multimodal_preprocess import n_signal_channels
 from ctg_ml.pretrain import load_pretrained_encoder, set_encoder_frozen
 
 
@@ -93,10 +94,10 @@ class MultimodalNPZDataset(Dataset):
         )
 
 
-def compute_signal_stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    means = np.zeros(2, dtype=np.float32)
-    stds = np.ones(2, dtype=np.float32)
-    for ch in range(2):
+def compute_signal_stats(X: np.ndarray, n_signal: int = 2) -> tuple[np.ndarray, np.ndarray]:
+    means = np.zeros(n_signal, dtype=np.float32)
+    stds = np.ones(n_signal, dtype=np.float32)
+    for ch in range(n_signal):
         vals = X[:, ch, :].reshape(-1)
         vals = vals[np.isfinite(vals)]
         if len(vals) == 0:
@@ -108,16 +109,17 @@ def compute_signal_stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def normalize_sequences_inplace(X: np.ndarray, means: np.ndarray, stds: np.ndarray) -> None:
-    for ch in range(min(2, X.shape[1])):
+    n_signal = len(means)
+    for ch in range(min(n_signal, X.shape[1])):
         channel = X[:, ch, :]
         finite = np.isfinite(channel)
         channel[finite] = (channel[finite] - means[ch]) / stds[ch]
         channel[~finite] = 0.0
         X[:, ch, :] = channel
-    if X.shape[1] > 2:
-        masks = X[:, 2:, :]
+    if X.shape[1] > n_signal:
+        masks = X[:, n_signal:, :]
         masks[~np.isfinite(masks)] = 0.0
-        X[:, 2:, :] = masks
+        X[:, n_signal:, :] = masks
 
 
 def resolve_tabular_feature_indices(feature_names: list[str], raw_columns: list[str]) -> list[int]:
@@ -624,7 +626,9 @@ def main() -> None:
     train_ds = MultimodalNPZDataset(train_npz)
     val_ds = MultimodalNPZDataset(val_npz)
     test_ds = MultimodalNPZDataset(test_npz)
-    means, stds = compute_signal_stats(train_ds.X_seq)
+    means, stds = compute_signal_stats(
+        train_ds.X_seq, n_signal_channels(train_ds.sequence_channels)
+    )
     normalize_sequences_inplace(train_ds.X_seq, means, stds)
     normalize_sequences_inplace(val_ds.X_seq, means, stds)
     normalize_sequences_inplace(test_ds.X_seq, means, stds)

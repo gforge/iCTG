@@ -1,0 +1,273 @@
+{
+  "run_name": "long180_random_s52",
+  "modality_mode": "multimodal",
+  "seed": 52,
+  "ablate_sequence": false,
+  "ablate_tabular": false,
+  "ablated_tabular_columns": [],
+  "ablated_feature_indices": [],
+  "init_encoder": "",
+  "freeze_encoder_epochs": 0,
+  "checkpoint_path": "artifacts_ctg3_180m/checkpoints/best_multimodal_tcn_long180_random_s52.pt",
+  "history_path": "artifacts_ctg3_180m/multimodal_tcn_history_long180_random_s52.csv",
+  "val_metrics": {
+    "loss": 3.909007819303109,
+    "apgar": {
+      "apgar1": {
+        "mae": 0.5763668940662096,
+        "rmse": 1.1054169962177254
+      },
+      "apgar5": {
+        "mae": 0.3466622658398741,
+        "rmse": 0.7581465420091359
+      },
+      "apgar10": {
+        "mae": 0.13159713521405575,
+        "rmse": 0.47049307847025834
+      }
+    },
+    "derived_binary": {
+      "apgar1_below7": {
+        "roc_auc": 0.7825748935523116,
+        "pr_auc": 0.22317132833669084,
+        "prevalence": 0.04794996525364837
+      },
+      "apgar5_below7": {
+        "roc_auc": 0.8207959522491897,
+        "pr_auc": 0.14882609708591465,
+        "prevalence": 0.012072259857564703
+      },
+      "apgar10_below7": {
+        "roc_auc": 0.8275910597339169,
+        "pr_auc": 0.026759040756425753,
+        "prevalence": 0.0038227628149435275
+      }
+    },
+    "categorical": {
+      "forlossningsslut": {
+        "accuracy": 0.8916102136529442
+      }
+    },
+    "regression": {
+      "ph_navelartar": {
+        "mae": 0.12094586342573166,
+        "rmse": 0.15695391595363617
+      },
+      "ph_navelven": {
+        "mae": 0.13222698867321014,
+        "rmse": 0.16712181270122528
+      }
+    },
+    "binary": {
+      "ph_navel_below7": {
+        "roc_auc": 0.7462802619847748,
+        "pr_auc": 0.0658530668152354,
+        "prevalence": 0.008331349678647942
+      },
+      "shoulder_dystocia": {
+        "roc_auc": 0.8178744455484768,
+        "pr_auc": 0.07139856949202072,
+        "prevalence": 0.009379885356956748
+      },
+      "treatment_for_hypoglycemia": {
+        "roc_auc": 0.8281655411409277,
+        "pr_auc": 0.16346376278732763,
+        "prevalence": 0.022581205488969948
+      },
+      "neonatal_sepsis_or_pneumonia": {
+        "roc_auc": 0.7765263954368198,
+        "pr_auc": 0.1755016309598322,
+        "prevalence": 0.005211047420531527
+      },
+      "neonatal_anemia": {
+        "roc_auc": 0.9672148941736601,
+        "pr_auc": 0.4228754412186146,
+        "prevalence": 0.004081987146083029
+      },
+      "respiratorbehandling": {
+        "roc_auc": 0.79189604090225,
+        "pr_auc": 0.19743676352694825,
+        "prevalence": 0.02622893868334202
+      },
+      "severe_neonatal_outcome": {
+        "roc_auc": 0.803571516966562,
+        "pr_auc": 0.34200520303160153,
+        "prevalence": 0.0429911412193851
+      },
+      "metabolic_acidosis": {
+        "roc_auc": 0.7117378220161946,
+        "pr_auc": 0.084733573892936,
+        "prevalence": 0.01758076634109692
+      },
+      "ph_navel_below705": {
+        "roc_auc": 0.6957698701761037,
+        "pr_auc": 0.09264587925813568,
+        "prevalence": 0.02130445132111402
+      },
+      "birth_asphyxia_any": {
+        "roc_auc": 0.8266540663800938,
+        "pr_auc": 0.07783102252498955,
+        "prevalence": 0.010943199583116207
+      },
+      "neonatal_care_admission": {
+        "roc_auc": 0.7807211533398625,
+        "pr_auc": 0.4939217511814805,
+        "prevalence": 0.083637311099531
+      },
+      "hie": {
+        "roc_auc": 0.8093390179094171,
+        "pr_auc": 0.07707900103664202,
+        "prevalence": 0.0025186729199235714
+      },
+      "snq_hypothermia_treatment": {
+        "roc_auc": 0.8764890009564386,
+        "pr_auc": 0.07590110365909507,
+        "prevalence": 0.0011290602744484974
+      },
+      "fetal_distress_in_labour": {
+        "roc_auc": 0.8606219146677891,
+        "pr_auc": 0.4265076987544609,
+        "prevalence": 0.07078339412888657
+      },
+      "emergency_c_section": {
+        "roc_auc": 0.9576715894023744,
+        "pr_auc": 0.8243812328102147,
+        "prevalence": 0.12619419836720513
+      }
+    },
+    "apgar5_mae": 0.3466622658398741,
+    "apgar5_below7_pr_auc": 0.14882609708591465,
+    "mean_binary_pr_auc": 0.22168289817380923,
+    "monitor_binary_pr_auc": 0.26737165629798315
+  },
+  "test_metrics": {
+    "loss": 4.634679604242111,
+    "apgar": {
+      "apgar1": {
+        "mae": 0.5746145446835248,
+        "rmse": 1.108508439365753
+      },
+      "apgar5": {
+        "mae": 0.3434348915323024,
+        "rmse": 0.7424195842970897
+      },
+      "apgar10": {
+        "mae": 0.1290144239866226,
+        "rmse": 0.4665902039877264
+      }
+    },
+    "derived_binary": {
+      "apgar1_below7": {
+        "roc_auc": 0.7875443201911086,
+        "pr_auc": 0.22145162894337708,
+        "prevalence": 0.05199336997295647
+      },
+      "apgar5_below7": {
+        "roc_auc": 0.7977010649923708,
+        "pr_auc": 0.10368488888141883,
+        "prevalence": 0.011949411251635412
+      },
+      "apgar10_below7": {
+        "roc_auc": 0.8195112705216807,
+        "pr_auc": 0.0606524635720944,
+        "prevalence": 0.0028785764131193303
+      }
+    },
+    "categorical": {
+      "forlossningsslut": {
+        "accuracy": 0.8946358482337549
+      }
+    },
+    "regression": {
+      "ph_navelartar": {
+        "mae": 0.12180420756340027,
+        "rmse": 0.15971344709396362
+      },
+      "ph_navelven": {
+        "mae": 0.13312646746635437,
+        "rmse": 0.16890445351600647
+      }
+    },
+    "binary": {
+      "ph_navel_below7": {
+        "roc_auc": 0.7482044968912824,
+        "pr_auc": 0.05634757495604956,
+        "prevalence": 0.008637008991954567
+      },
+      "shoulder_dystocia": {
+        "roc_auc": 0.8240781917252505,
+        "pr_auc": 0.07310612565005349,
+        "prevalence": 0.01247274313126908
+      },
+      "treatment_for_hypoglycemia": {
+        "roc_auc": 0.8177725276035361,
+        "pr_auc": 0.14804273812464752,
+        "prevalence": 0.020322721325774094
+      },
+      "neonatal_sepsis_or_pneumonia": {
+        "roc_auc": 0.7631458743012867,
+        "pr_auc": 0.17328267436722578,
+        "prevalence": 0.005931094635848234
+      },
+      "neonatal_anemia": {
+        "roc_auc": 0.9427859017622797,
+        "pr_auc": 0.40451606417401575,
+        "prevalence": 0.0030527692978630614
+      },
+      "respiratorbehandling": {
+        "roc_auc": 0.7851335742947895,
+        "pr_auc": 0.20507805962778353,
+        "prevalence": 0.026689925861317052
+      },
+      "severe_neonatal_outcome": {
+        "roc_auc": 0.8153802040536839,
+        "pr_auc": 0.35028831974016295,
+        "prevalence": 0.044657653728739644
+      },
+      "metabolic_acidosis": {
+        "roc_auc": 0.7229161693783719,
+        "pr_auc": 0.0626603745070643,
+        "prevalence": 0.017968517968517967
+      },
+      "ph_navel_below705": {
+        "roc_auc": 0.718731359185492,
+        "pr_auc": 0.06712991359874496,
+        "prevalence": 0.021415049692380502
+      },
+      "birth_asphyxia_any": {
+        "roc_auc": 0.8108599809430711,
+        "pr_auc": 0.07008558473844252,
+        "prevalence": 0.009332751853467073
+      },
+      "neonatal_care_admission": {
+        "roc_auc": 0.787739008142117,
+        "pr_auc": 0.47299991037966227,
+        "prevalence": 0.08416921064108156
+      },
+      "hie": {
+        "roc_auc": 0.7828816441726671,
+        "pr_auc": 0.02374190727384926,
+        "prevalence": 0.0025294374182293937
+      },
+      "snq_hypothermia_treatment": {
+        "roc_auc": 0.6992698621671727,
+        "pr_auc": 0.00390914570253229,
+        "prevalence": 0.00113388573920628
+      },
+      "fetal_distress_in_labour": {
+        "roc_auc": 0.8700038497863606,
+        "pr_auc": 0.46227348233508087,
+        "prevalence": 0.07248146532926297
+      },
+      "emergency_c_section": {
+        "roc_auc": 0.9542696248002265,
+        "pr_auc": 0.8179297819709372,
+        "prevalence": 0.12812908853030963
+      }
+    },
+    "apgar5_mae": 0.3434348915323024,
+    "apgar5_below7_pr_auc": 0.10368488888141883,
+    "mean_binary_pr_auc": 0.20984336880795235,
+    "monitor_binary_pr_auc": 0.24740837337707708
+  }
+}

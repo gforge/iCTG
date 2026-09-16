@@ -134,6 +134,11 @@ def pretrain_sequence_config(
     seq_cfg: MultimodalSequenceConfig, pretrain_cfg: MultimodalPretrainConfig
 ) -> MultimodalSequenceConfig:
     """Supervised channel layout, pretraining window length, no padding of short windows."""
+    if seq_cfg.include_stv_channel:
+        raise ValueError(
+            "Pretraining does not support sequence.include_stv_channel yet: the all-sessions "
+            "export and the reconstruction target cover FHR and toco only."
+        )
     if not seq_cfg.treat_fhr_zero_as_missing:
         raise ValueError(
             "Pretraining requires sequence.treat_fhr_zero_as_missing=true: the pretraining "

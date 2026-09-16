@@ -40,16 +40,37 @@ SELECT
     c.BabyID,
     c."Timestamp" AS ts,
     CAST(c.FHR AS DOUBLE) AS fhr,
-    CAST(c.toco AS DOUBLE) AS toco,
+    CAST(c.toco AS DOUBLE) AS toco,{stv_select}
     CAST(c.Hr1_SignalQuality AS VARCHAR) AS hr1_signal_quality
 FROM read_parquet(?) c
 INNER JOIN split_map s ON c.BabyID = s.BabyID
 ORDER BY c.BabyID, ts
 """
 
+# Channels that carry real-valued signals (normalised with train-set mean/std, NaN = missing);
+# every other channel is a 0/1 indicator.
+SIGNAL_CHANNEL_NAMES = ("FHR", "toco", "fhr_stv")
+
+
+def sequence_sql(cfg: MultimodalSequenceConfig) -> str:
+    stv = "\n    CAST(c.fhr_stv AS DOUBLE) AS fhr_stv," if cfg.include_stv_channel else ""
+    return SEQUENCE_SQL.format(stv_select=stv)
+
+
+def n_signal_channels(channel_names: list[str]) -> int:
+    """Number of leading real-valued signal channels (FHR, toco and optionally fhr_stv)."""
+    n = 0
+    for name in channel_names:
+        if name not in SIGNAL_CHANNEL_NAMES:
+            break
+        n += 1
+    return n
+
 
 def sequence_channel_names(cfg: MultimodalSequenceConfig) -> list[str]:
     names = ["FHR", "toco"]
+    if cfg.include_stv_channel:
+        names.append("fhr_stv")
     if cfg.include_signal_quality_channels:
         names.extend([f"Hr1_SignalQuality=={level}" for level in cfg.quality_levels])
     if cfg.include_padding_mask:
@@ -83,6 +104,13 @@ def _finalize_sequence(
     seq = np.zeros((len(channel_names), n_steps), dtype=np.float32)
     seq[channel_index["FHR"], :] = np.nan
     seq[channel_index["toco"], :] = np.nan
+    stv: np.ndarray | None = None
+    if cfg.include_stv_channel:
+        seq[channel_index["fhr_stv"], :] = np.nan
+        if "fhr_stv" in group.columns:
+            stv = group["fhr_stv"].to_numpy(dtype=np.float32, copy=True)
+            stv[~np.isfinite(stv)] = np.nan
+            stv[~np.isfinite(fhr)] = np.nan  # no variability where FHR itself is missing
 
     if raw_len >= n_steps:
         fhr_tail = fhr[-n_steps:]
@@ -100,6 +128,8 @@ def _finalize_sequence(
 
     seq[channel_index["FHR"], start:] = fhr_tail
     seq[channel_index["toco"], start:] = toco_tail
+    if stv is not None:
+        seq[channel_index["fhr_stv"], start:] = stv[-n_steps:] if raw_len >= n_steps else stv
     if cfg.include_signal_quality_channels:
         for level in cfg.quality_levels:
             seq[channel_index[f"Hr1_SignalQuality=={level}"], start:] = (
@@ -177,7 +207,7 @@ def _build_split_npz(
 
     try:
         con.register("split_map", split_df[["BabyID"]])
-        res = con.execute(SEQUENCE_SQL, [str(ctg_parquet)])
+        res = con.execute(sequence_sql(seq_cfg), [str(ctg_parquet)])
         carry: pd.DataFrame | None = None
         while True:
             chunk = res.fetch_df_chunk(vectors_per_chunk=seq_cfg.chunk_vectors_per_batch)

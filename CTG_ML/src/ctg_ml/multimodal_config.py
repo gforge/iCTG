@@ -36,6 +36,9 @@ class MultimodalSequenceConfig:
     quality_levels: list[str]
     output_dir: Path
     chunk_vectors_per_batch: int
+    # Short-term FHR variability from the 4 Hz sub-samples (stage 2 ``fhr_stv``) as a third
+    # signal channel right after FHR and toco. Needs a CTG parquet that has the column.
+    include_stv_channel: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,7 @@ def load_multimodal_config(
             quality_levels=[str(x) for x in sequence["quality_levels"]],
             output_dir=Path(sequence["output_dir"]),
             chunk_vectors_per_batch=int(sequence["chunk_vectors_per_batch"]),
+            include_stv_channel=bool(sequence.get("include_stv_channel", False)),
         ),
         registry=MultimodalRegistryConfig(
             input_numeric=[str(x) for x in registry["input_numeric"]],

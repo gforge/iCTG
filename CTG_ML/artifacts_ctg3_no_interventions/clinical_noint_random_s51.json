@@ -1,0 +1,1469 @@
+{
+  "results": [
+    {
+      "outcome": "apgar1_below7",
+      "n": 11463,
+      "positives": 596,
+      "prevalence": 0.05199336997295647,
+      "roc_auc": 0.7664190829572692,
+      "pr_auc": 0.20323725819387528,
+      "brier_raw": 0.04565216127843082,
+      "calibrated": true,
+      "brier": 0.04567289453907171,
+      "brier_baseline": 0.04929005945181174,
+      "mean_predicted": 0.04784890401509041,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 162,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.006172839506172839
+        },
+        {
+          "bin": 3,
+          "n": 3112,
+          "mean_predicted": 0.006658589528356329,
+          "observed_rate": 0.011889460154241645
+        },
+        {
+          "bin": 4,
+          "n": 911,
+          "mean_predicted": 0.02335928809788654,
+          "observed_rate": 0.018660812294182216
+        },
+        {
+          "bin": 5,
+          "n": 961,
+          "mean_predicted": 0.025511615232833598,
+          "observed_rate": 0.018730489073881373
+        },
+        {
+          "bin": 6,
+          "n": 818,
+          "mean_predicted": 0.027380952380952388,
+          "observed_rate": 0.03667481662591687
+        },
+        {
+          "bin": 7,
+          "n": 1144,
+          "mean_predicted": 0.03574430667038993,
+          "observed_rate": 0.039335664335664336
+        },
+        {
+          "bin": 8,
+          "n": 1893,
+          "mean_predicted": 0.05349860106858545,
+          "observed_rate": 0.05652403592181722
+        },
+        {
+          "bin": 9,
+          "n": 915,
+          "mean_predicted": 0.0809604079020178,
+          "observed_rate": 0.08196721311475409
+        },
+        {
+          "bin": 10,
+          "n": 1547,
+          "mean_predicted": 0.15729331059152243,
+          "observed_rate": 0.17194570135746606
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.135498046875,
+          "sensitivity": 0.23657718120805368,
+          "ppv": 0.24607329842931938,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.0980224609375,
+          "sensitivity": 0.35067114093959734,
+          "ppv": 0.1823734729493892,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.0615234375,
+          "sensitivity": 0.540268456375839,
+          "ppv": 0.14042738770170082,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "apgar5_below7",
+      "n": 11465,
+      "positives": 137,
+      "prevalence": 0.011949411251635412,
+      "roc_auc": 0.793368412099468,
+      "pr_auc": 0.11554055770695201,
+      "brier_raw": 0.011197076082426309,
+      "calibrated": true,
+      "brier": 0.011293824555874934,
+      "brier_baseline": 0.0118066228223747,
+      "mean_predicted": 0.0120967097432863,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 409,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 2,
+          "n": 1277,
+          "mean_predicted": 0.0015987210231814546,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 3,
+          "n": 1388,
+          "mean_predicted": 0.0020891364902506965,
+          "observed_rate": 0.002881844380403458
+        },
+        {
+          "bin": 4,
+          "n": 1214,
+          "mean_predicted": 0.0041017227235438875,
+          "observed_rate": 0.004118616144975288
+        },
+        {
+          "bin": 6,
+          "n": 1629,
+          "mean_predicted": 0.004313000616142946,
+          "observed_rate": 0.0055248618784530384
+        },
+        {
+          "bin": 7,
+          "n": 1856,
+          "mean_predicted": 0.005277044854881266,
+          "observed_rate": 0.010775862068965518
+        },
+        {
+          "bin": 8,
+          "n": 720,
+          "mean_predicted": 0.006756756756756757,
+          "observed_rate": 0.011111111111111112
+        },
+        {
+          "bin": 9,
+          "n": 1178,
+          "mean_predicted": 0.013881900560497706,
+          "observed_rate": 0.013582342954159592
+        },
+        {
+          "bin": 10,
+          "n": 1794,
+          "mean_predicted": 0.050574236703364986,
+          "observed_rate": 0.04180602006688963
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.032928466796875,
+          "sensitivity": 0.30656934306569344,
+          "ppv": 0.07329842931937172,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.0196380615234375,
+          "sensitivity": 0.46715328467153283,
+          "ppv": 0.055846422338568937,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.01024627685546875,
+          "sensitivity": 0.583941605839416,
+          "ppv": 0.03488879197557784,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "apgar10_below7",
+      "n": 11464,
+      "positives": 33,
+      "prevalence": 0.0028785764131193303,
+      "roc_auc": 0.8200202532719373,
+      "pr_auc": 0.03171518289121569,
+      "brier_raw": 0.0028320950926888607,
+      "calibrated": true,
+      "brier": 0.0028418781041210663,
+      "brier_baseline": 0.0028702902109531635,
+      "mean_predicted": 0.0038228755703709817,
+      "calibration": [
+        {
+          "bin": 2,
+          "n": 1388,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 3,
+          "n": 1930,
+          "mean_predicted": 0.0004926108374384235,
+          "observed_rate": 0.0005181347150259067
+        },
+        {
+          "bin": 5,
+          "n": 1740,
+          "mean_predicted": 0.0005787037037037037,
+          "observed_rate": 0.0005747126436781609
+        },
+        {
+          "bin": 6,
+          "n": 1459,
+          "mean_predicted": 0.0006756756756756757,
+          "observed_rate": 0.0006854009595613434
+        },
+        {
+          "bin": 7,
+          "n": 1454,
+          "mean_predicted": 0.001378994787622161,
+          "observed_rate": 0.0041265474552957355
+        },
+        {
+          "bin": 8,
+          "n": 397,
+          "mean_predicted": 0.0022988505747126436,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 9,
+          "n": 1756,
+          "mean_predicted": 0.005148741418764301,
+          "observed_rate": 0.003416856492027335
+        },
+        {
+          "bin": 10,
+          "n": 1340,
+          "mean_predicted": 0.021584372639184984,
+          "observed_rate": 0.013432835820895522
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.006870269775390625,
+          "sensitivity": 0.3939393939393939,
+          "ppv": 0.02268760907504363,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.00408172607421875,
+          "sensitivity": 0.5454545454545454,
+          "ppv": 0.015706806282722512,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.002117156982421875,
+          "sensitivity": 0.6363636363636364,
+          "ppv": 0.009158307893589184,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "ph_navel_below7",
+      "n": 8452,
+      "positives": 73,
+      "prevalence": 0.008637008991954567,
+      "roc_auc": 0.6660429612844898,
+      "pr_auc": 0.029342687440655657,
+      "brier_raw": 0.1129894163610622,
+      "calibrated": true,
+      "brier": 0.0085840471143044,
+      "brier_baseline": 0.008562411067627463,
+      "mean_predicted": 0.008345768565283006,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 238,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.008403361344537815
+        },
+        {
+          "bin": 2,
+          "n": 639,
+          "mean_predicted": 0.001739791541288702,
+          "observed_rate": 0.001564945226917058
+        },
+        {
+          "bin": 3,
+          "n": 1410,
+          "mean_predicted": 0.0027952480782669456,
+          "observed_rate": 0.00425531914893617
+        },
+        {
+          "bin": 6,
+          "n": 2253,
+          "mean_predicted": 0.006690454950936663,
+          "observed_rate": 0.006213936972924989
+        },
+        {
+          "bin": 9,
+          "n": 2702,
+          "mean_predicted": 0.008055754473017493,
+          "observed_rate": 0.008882309400444115
+        },
+        {
+          "bin": 10,
+          "n": 1210,
+          "mean_predicted": 0.02367369069254422,
+          "observed_rate": 0.021487603305785124
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.66748046875,
+          "sensitivity": 0.2602739726027397,
+          "ppv": 0.04491725768321513,
+          "flagged": 423
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.544921875,
+          "sensitivity": 0.3424657534246575,
+          "ppv": 0.029585798816568046,
+          "flagged": 845
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.41650390625,
+          "sensitivity": 0.3835616438356164,
+          "ppv": 0.016568047337278107,
+          "flagged": 1690
+        }
+      ]
+    },
+    {
+      "outcome": "shoulder_dystocia",
+      "n": 11465,
+      "positives": 143,
+      "prevalence": 0.01247274313126908,
+      "roc_auc": 0.7959718253835901,
+      "pr_auc": 0.05045652351815285,
+      "brier_raw": 0.10143841933158695,
+      "calibrated": true,
+      "brier": 0.012179489568511935,
+      "brier_baseline": 0.01231717381005046,
+      "mean_predicted": 0.009466499685739612,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 723,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0013831258644536654
+        },
+        {
+          "bin": 3,
+          "n": 2588,
+          "mean_predicted": 0.0015319800842589042,
+          "observed_rate": 0.0030911901081916537
+        },
+        {
+          "bin": 5,
+          "n": 2293,
+          "mean_predicted": 0.002702702702702703,
+          "observed_rate": 0.0008722197993894462
+        },
+        {
+          "bin": 6,
+          "n": 679,
+          "mean_predicted": 0.005689900426742534,
+          "observed_rate": 0.007363770250368188
+        },
+        {
+          "bin": 9,
+          "n": 3913,
+          "mean_predicted": 0.00943114774216069,
+          "observed_rate": 0.015844620495783286
+        },
+        {
+          "bin": 10,
+          "n": 1269,
+          "mean_predicted": 0.045393091912381694,
+          "observed_rate": 0.0512214342001576
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.7353515625,
+          "sensitivity": 0.2517482517482518,
+          "ppv": 0.06282722513089005,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.60595703125,
+          "sensitivity": 0.42657342657342656,
+          "ppv": 0.053228621291448515,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.3974609375,
+          "sensitivity": 0.6223776223776224,
+          "ppv": 0.03881378107283035,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "treatment_for_hypoglycemia",
+      "n": 11465,
+      "positives": 233,
+      "prevalence": 0.020322721325774094,
+      "roc_auc": 0.8034109701894037,
+      "pr_auc": 0.13295774936892332,
+      "brier_raw": 0.16843146125449301,
+      "calibrated": true,
+      "brier": 0.018738356195978106,
+      "brier_baseline": 0.01990970832368902,
+      "mean_predicted": 0.022487959090676128,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 466,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.002145922746781116
+        },
+        {
+          "bin": 4,
+          "n": 3239,
+          "mean_predicted": 0.0036733224095056405,
+          "observed_rate": 0.0033961099104661933
+        },
+        {
+          "bin": 5,
+          "n": 946,
+          "mean_predicted": 0.008205128205128202,
+          "observed_rate": 0.009513742071881607
+        },
+        {
+          "bin": 6,
+          "n": 2095,
+          "mean_predicted": 0.010712622263623657,
+          "observed_rate": 0.010978520286396181
+        },
+        {
+          "bin": 7,
+          "n": 893,
+          "mean_predicted": 0.013933547695605564,
+          "observed_rate": 0.012318029115341545
+        },
+        {
+          "bin": 9,
+          "n": 2291,
+          "mean_predicted": 0.02558004928698292,
+          "observed_rate": 0.020951549541684853
+        },
+        {
+          "bin": 10,
+          "n": 1535,
+          "mean_predicted": 0.0942508232946036,
+          "observed_rate": 0.08469055374592833
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.8017578125,
+          "sensitivity": 0.34763948497854075,
+          "ppv": 0.14136125654450263,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.67626953125,
+          "sensitivity": 0.5107296137339056,
+          "ppv": 0.10383944153577661,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.5283203125,
+          "sensitivity": 0.630901287553648,
+          "ppv": 0.0641081552551243,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "neonatal_sepsis_or_pneumonia",
+      "n": 11465,
+      "positives": 68,
+      "prevalence": 0.005931094635848234,
+      "roc_auc": 0.7555961579156538,
+      "pr_auc": 0.1679419283769212,
+      "brier_raw": 0.05772279129835999,
+      "calibrated": true,
+      "brier": 0.0053838241916003655,
+      "brier_baseline": 0.0058959167522688455,
+      "mean_predicted": 0.005236673311006875,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 14,
+          "mean_predicted": 6.525711302531976e-05,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 4,
+          "n": 3912,
+          "mean_predicted": 0.0010441138084051162,
+          "observed_rate": 0.003067484662576687
+        },
+        {
+          "bin": 5,
+          "n": 1600,
+          "mean_predicted": 0.0018130804311774459,
+          "observed_rate": 0.001875
+        },
+        {
+          "bin": 6,
+          "n": 278,
+          "mean_predicted": 0.003164556962025316,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 7,
+          "n": 2183,
+          "mean_predicted": 0.0031688546853779987,
+          "observed_rate": 0.0022904260192395786
+        },
+        {
+          "bin": 9,
+          "n": 1323,
+          "mean_predicted": 0.006216006216006216,
+          "observed_rate": 0.006802721088435374
+        },
+        {
+          "bin": 10,
+          "n": 2155,
+          "mean_predicted": 0.0171837174781194,
+          "observed_rate": 0.018097447795823667
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.5166015625,
+          "sensitivity": 0.38235294117647056,
+          "ppv": 0.04537521815008726,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.3828125,
+          "sensitivity": 0.45588235294117646,
+          "ppv": 0.027050610820244327,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.260009765625,
+          "sensitivity": 0.5735294117647058,
+          "ppv": 0.0170082860880942,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "neonatal_anemia",
+      "n": 11465,
+      "positives": 35,
+      "prevalence": 0.0030527692978630614,
+      "roc_auc": 0.9009348831396076,
+      "pr_auc": 0.4583586447912758,
+      "brier_raw": 0.013733022229265797,
+      "calibrated": true,
+      "brier": 0.002266800973950545,
+      "brier_baseline": 0.0030434498974770863,
+      "mean_predicted": 0.004108190026317923,
+      "calibration": [
+        {
+          "bin": 7,
+          "n": 7845,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0006373486297004461
+        },
+        {
+          "bin": 9,
+          "n": 2243,
+          "mean_predicted": 0.0008121275089180246,
+          "observed_rate": 0.00044583147570218456
+        },
+        {
+          "bin": 10,
+          "n": 1377,
+          "mean_predicted": 0.03288220526451116,
+          "observed_rate": 0.021060275962236745
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.10211181640625,
+          "sensitivity": 0.8,
+          "ppv": 0.04886561954624782,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.038543701171875,
+          "sensitivity": 0.8285714285714286,
+          "ppv": 0.02530541012216405,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.0163421630859375,
+          "sensitivity": 0.8285714285714286,
+          "ppv": 0.01264718709114697,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "respiratorbehandling",
+      "n": 11465,
+      "positives": 306,
+      "prevalence": 0.026689925861317052,
+      "roc_auc": 0.7761610693206398,
+      "pr_auc": 0.18692661745591493,
+      "brier_raw": 0.14391306946878604,
+      "calibrated": true,
+      "brier": 0.02373191346477093,
+      "brier_baseline": 0.02597757371883445,
+      "mean_predicted": 0.026125635699014296,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 207,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.00966183574879227
+        },
+        {
+          "bin": 2,
+          "n": 2020,
+          "mean_predicted": 0.003097573567372225,
+          "observed_rate": 0.005445544554455445
+        },
+        {
+          "bin": 3,
+          "n": 289,
+          "mean_predicted": 0.0035714285714285718,
+          "observed_rate": 0.010380622837370242
+        },
+        {
+          "bin": 4,
+          "n": 1490,
+          "mean_predicted": 0.008587143978166548,
+          "observed_rate": 0.008053691275167786
+        },
+        {
+          "bin": 5,
+          "n": 1238,
+          "mean_predicted": 0.00914380714879468,
+          "observed_rate": 0.011308562197092083
+        },
+        {
+          "bin": 6,
+          "n": 721,
+          "mean_predicted": 0.012050697986164512,
+          "observed_rate": 0.008321775312066574
+        },
+        {
+          "bin": 7,
+          "n": 1368,
+          "mean_predicted": 0.016558675305975518,
+          "observed_rate": 0.015350877192982455
+        },
+        {
+          "bin": 8,
+          "n": 1686,
+          "mean_predicted": 0.029126213592233,
+          "observed_rate": 0.029062870699881376
+        },
+        {
+          "bin": 9,
+          "n": 1161,
+          "mean_predicted": 0.041598347555099904,
+          "observed_rate": 0.047372954349698536
+        },
+        {
+          "bin": 10,
+          "n": 1285,
+          "mean_predicted": 0.10846925708460171,
+          "observed_rate": 0.10350194552529182
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.72705078125,
+          "sensitivity": 0.28104575163398693,
+          "ppv": 0.15008726003490402,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.6298828125,
+          "sensitivity": 0.4019607843137255,
+          "ppv": 0.10732984293193717,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.497802734375,
+          "sensitivity": 0.5849673202614379,
+          "ppv": 0.07806367204535543,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "severe_neonatal_outcome",
+      "n": 11465,
+      "positives": 512,
+      "prevalence": 0.044657653728739644,
+      "roc_auc": 0.8076768351136676,
+      "pr_auc": 0.3449342436528305,
+      "brier_raw": 0.1435653596361827,
+      "calibrated": true,
+      "brier": 0.035360899174985805,
+      "brier_baseline": 0.04266334769218363,
+      "mean_predicted": 0.04235178901516961,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 348,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.005747126436781609
+        },
+        {
+          "bin": 2,
+          "n": 1916,
+          "mean_predicted": 0.00798074363742489,
+          "observed_rate": 0.008350730688935281
+        },
+        {
+          "bin": 3,
+          "n": 949,
+          "mean_predicted": 0.009380142021220152,
+          "observed_rate": 0.015806111696522657
+        },
+        {
+          "bin": 4,
+          "n": 829,
+          "mean_predicted": 0.01302755084445389,
+          "observed_rate": 0.012062726176115802
+        },
+        {
+          "bin": 6,
+          "n": 2656,
+          "mean_predicted": 0.01910828025477707,
+          "observed_rate": 0.01882530120481928
+        },
+        {
+          "bin": 7,
+          "n": 769,
+          "mean_predicted": 0.03363518758085382,
+          "observed_rate": 0.0247074122236671
+        },
+        {
+          "bin": 8,
+          "n": 1672,
+          "mean_predicted": 0.047949195454014104,
+          "observed_rate": 0.04485645933014354
+        },
+        {
+          "bin": 9,
+          "n": 1149,
+          "mean_predicted": 0.057606216870841366,
+          "observed_rate": 0.0670147954743255
+        },
+        {
+          "bin": 10,
+          "n": 1177,
+          "mean_predicted": 0.19336696026452888,
+          "observed_rate": 0.2107051826677995
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.73876953125,
+          "sensitivity": 0.36328125,
+          "ppv": 0.32460732984293195,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.6298828125,
+          "sensitivity": 0.474609375,
+          "ppv": 0.21204188481675393,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.50537109375,
+          "sensitivity": 0.6328125,
+          "ppv": 0.14129960750109027,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "metabolic_acidosis",
+      "n": 6734,
+      "positives": 121,
+      "prevalence": 0.017968517968517967,
+      "roc_auc": 0.6938886965693669,
+      "pr_auc": 0.05282005830917066,
+      "brier_raw": 0.1718467307359473,
+      "calibrated": true,
+      "brier": 0.01765798044667512,
+      "brier_baseline": 0.017645650330533013,
+      "mean_predicted": 0.016956630406322153,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 59,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.05084745762711865
+        },
+        {
+          "bin": 2,
+          "n": 992,
+          "mean_predicted": 0.0032971253017335975,
+          "observed_rate": 0.006048387096774193
+        },
+        {
+          "bin": 3,
+          "n": 563,
+          "mean_predicted": 0.008460236886632826,
+          "observed_rate": 0.0053285968028419185
+        },
+        {
+          "bin": 5,
+          "n": 1221,
+          "mean_predicted": 0.00999167360532889,
+          "observed_rate": 0.007371007371007371
+        },
+        {
+          "bin": 8,
+          "n": 2065,
+          "mean_predicted": 0.013928083574207755,
+          "observed_rate": 0.015980629539951573
+        },
+        {
+          "bin": 10,
+          "n": 1834,
+          "mean_predicted": 0.03554567144865528,
+          "observed_rate": 0.03653217011995638
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.7236328125,
+          "sensitivity": 0.2396694214876033,
+          "ppv": 0.08605341246290801,
+          "flagged": 337
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.62890625,
+          "sensitivity": 0.32231404958677684,
+          "ppv": 0.05794947994056464,
+          "flagged": 673
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.5234375,
+          "sensitivity": 0.4297520661157025,
+          "ppv": 0.038604305864884926,
+          "flagged": 1347
+        }
+      ]
+    },
+    {
+      "outcome": "ph_navel_below705",
+      "n": 8452,
+      "positives": 181,
+      "prevalence": 0.021415049692380502,
+      "roc_auc": 0.6908759287425745,
+      "pr_auc": 0.06311799874862253,
+      "brier_raw": 0.17842518986536682,
+      "calibrated": true,
+      "brier": 0.021044905292824767,
+      "brier_baseline": 0.020956445339053376,
+      "mean_predicted": 0.021143871547449785,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 382,
+          "mean_predicted": 0.002796958123614168,
+          "observed_rate": 0.01832460732984293
+        },
+        {
+          "bin": 2,
+          "n": 1220,
+          "mean_predicted": 0.008138026510738711,
+          "observed_rate": 0.00819672131147541
+        },
+        {
+          "bin": 3,
+          "n": 214,
+          "mean_predicted": 0.009433962264150945,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 6,
+          "n": 2458,
+          "mean_predicted": 0.0111340206185567,
+          "observed_rate": 0.010984540276647681
+        },
+        {
+          "bin": 8,
+          "n": 2272,
+          "mean_predicted": 0.020842379504993486,
+          "observed_rate": 0.020246478873239437
+        },
+        {
+          "bin": 10,
+          "n": 1906,
+          "mean_predicted": 0.047728748757837294,
+          "observed_rate": 0.047743966421825816
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.7041015625,
+          "sensitivity": 0.22099447513812154,
+          "ppv": 0.09456264775413711,
+          "flagged": 423
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.62060546875,
+          "sensitivity": 0.30939226519337015,
+          "ppv": 0.06627218934911243,
+          "flagged": 845
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.52685546875,
+          "sensitivity": 0.43646408839779005,
+          "ppv": 0.04674556213017751,
+          "flagged": 1690
+        }
+      ]
+    },
+    {
+      "outcome": "birth_asphyxia_any",
+      "n": 11465,
+      "positives": 107,
+      "prevalence": 0.009332751853467073,
+      "roc_auc": 0.7835985340317582,
+      "pr_auc": 0.06608187542943192,
+      "brier_raw": 0.11729168268917003,
+      "calibrated": true,
+      "brier": 0.008973284946003543,
+      "brier_baseline": 0.00924565159630868,
+      "mean_predicted": 0.010828200811920029,
+      "calibration": [
+        {
+          "bin": 2,
+          "n": 1194,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0008375209380234506
+        },
+        {
+          "bin": 3,
+          "n": 1240,
+          "mean_predicted": 0.0007905138339920947,
+          "observed_rate": 0.0016129032258064516
+        },
+        {
+          "bin": 4,
+          "n": 1092,
+          "mean_predicted": 0.001919385796545105,
+          "observed_rate": 0.0027472527472527475
+        },
+        {
+          "bin": 5,
+          "n": 2007,
+          "mean_predicted": 0.002412704780791468,
+          "observed_rate": 0.003986048829098156
+        },
+        {
+          "bin": 6,
+          "n": 677,
+          "mean_predicted": 0.004531722054380666,
+          "observed_rate": 0.007385524372230428
+        },
+        {
+          "bin": 8,
+          "n": 2926,
+          "mean_predicted": 0.01030235802421299,
+          "observed_rate": 0.00683526999316473
+        },
+        {
+          "bin": 9,
+          "n": 300,
+          "mean_predicted": 0.022292993630573247,
+          "observed_rate": 0.01
+        },
+        {
+          "bin": 10,
+          "n": 2029,
+          "mean_predicted": 0.037617665781568416,
+          "observed_rate": 0.032035485460818136
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.73193359375,
+          "sensitivity": 0.32710280373831774,
+          "ppv": 0.06108202443280977,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.61572265625,
+          "sensitivity": 0.4953271028037383,
+          "ppv": 0.0462478184991274,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.4482421875,
+          "sensitivity": 0.616822429906542,
+          "ppv": 0.02878325337985172,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "neonatal_care_admission",
+      "n": 11465,
+      "positives": 965,
+      "prevalence": 0.08416921064108156,
+      "roc_auc": 0.7838305452751049,
+      "pr_auc": 0.46010494306193195,
+      "brier_raw": 0.14556622249795212,
+      "calibrated": true,
+      "brier": 0.05873687289600037,
+      "brier_baseline": 0.0770847546211388,
+      "mean_predicted": 0.08379595902342132,
+      "calibration": [
+        {
+          "bin": 1,
+          "n": 1132,
+          "mean_predicted": 0.012243384259694179,
+          "observed_rate": 0.015901060070671377
+        },
+        {
+          "bin": 3,
+          "n": 1525,
+          "mean_predicted": 0.025559595543720712,
+          "observed_rate": 0.03344262295081967
+        },
+        {
+          "bin": 5,
+          "n": 3005,
+          "mean_predicted": 0.03865239181026563,
+          "observed_rate": 0.03361064891846922
+        },
+        {
+          "bin": 7,
+          "n": 1979,
+          "mean_predicted": 0.05754669358909639,
+          "observed_rate": 0.053562405255179385
+        },
+        {
+          "bin": 8,
+          "n": 1303,
+          "mean_predicted": 0.06836956332693905,
+          "observed_rate": 0.08288564850345356
+        },
+        {
+          "bin": 9,
+          "n": 1361,
+          "mean_predicted": 0.09912940187822722,
+          "observed_rate": 0.1109478324761205
+        },
+        {
+          "bin": 10,
+          "n": 1160,
+          "mean_predicted": 0.39124721986503325,
+          "observed_rate": 0.3706896551724138
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.72607421875,
+          "sensitivity": 0.338860103626943,
+          "ppv": 0.5706806282722513,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.58447265625,
+          "sensitivity": 0.44352331606217615,
+          "ppv": 0.37347294938917974,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.47314453125,
+          "sensitivity": 0.5761658031088083,
+          "ppv": 0.24247710423026603,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "hie",
+      "n": 11465,
+      "positives": 29,
+      "prevalence": 0.0025294374182293937,
+      "roc_auc": 0.7310353873430546,
+      "pr_auc": 0.00712153213425828,
+      "brier_raw": 0.02490143067618504,
+      "calibrated": true,
+      "brier": 0.0025343458642459182,
+      "brier_baseline": 0.002523039364576655,
+      "mean_predicted": 0.0025368651120299783,
+      "calibration": [
+        {
+          "bin": 3,
+          "n": 2616,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.00038226299694189603
+        },
+        {
+          "bin": 6,
+          "n": 3999,
+          "mean_predicted": 0.0007455268389662025,
+          "observed_rate": 0.0015003750937734434
+        },
+        {
+          "bin": 7,
+          "n": 1395,
+          "mean_predicted": 0.001368925393566051,
+          "observed_rate": 0.002150537634408602
+        },
+        {
+          "bin": 8,
+          "n": 211,
+          "mean_predicted": 0.0045662100456621,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 10,
+          "n": 3244,
+          "mean_predicted": 0.007161120664839245,
+          "observed_rate": 0.005856966707768188
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.346435546875,
+          "sensitivity": 0.20689655172413793,
+          "ppv": 0.010471204188481676,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.2017822265625,
+          "sensitivity": 0.3793103448275862,
+          "ppv": 0.009598603839441536,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.09417724609375,
+          "sensitivity": 0.4827586206896552,
+          "ppv": 0.006105538595726123,
+          "flagged": 2293
+        }
+      ]
+    },
+    {
+      "outcome": "snq_hypothermia_treatment",
+      "n": 11465,
+      "positives": 13,
+      "prevalence": 0.00113388573920628,
+      "roc_auc": 0.6235054676374969,
+      "pr_auc": 0.002133715782080776,
+      "brier_raw": 0.010938639396703738,
+      "calibrated": true,
+      "brier": 0.0013978648917654106,
+      "brier_baseline": 0.0011326000423367048,
+      "mean_predicted": 0.0013345531823570327,
+      "calibration": [
+        {
+          "bin": 4,
+          "n": 3750,
+          "mean_predicted": 0.0,
+          "observed_rate": 0.0005333333333333334
+        },
+        {
+          "bin": 8,
+          "n": 4950,
+          "mean_predicted": 0.0007977662544874348,
+          "observed_rate": 0.0014141414141414141
+        },
+        {
+          "bin": 9,
+          "n": 749,
+          "mean_predicted": 0.0013642564802182808,
+          "observed_rate": 0.0
+        },
+        {
+          "bin": 10,
+          "n": 2016,
+          "mean_predicted": 0.005123948994209865,
+          "observed_rate": 0.001984126984126984
+        }
+      ],
+      "flag_rates": [
+        {
+          "flag_rate": 0.05,
+          "threshold": 0.151611328125,
+          "sensitivity": 0.07692307692307693,
+          "ppv": 0.0017452006980802793,
+          "flagged": 573
+        },
+        {
+          "flag_rate": 0.1,
+          "threshold": 0.0703125,
+          "sensitivity": 0.07692307692307693,
+          "ppv": 0.0008726003490401396,
+          "flagged": 1146
+        },
+        {
+          "flag_rate": 0.2,
+          "threshold": 0.0266571044921875,
+          "sensitivity": 0.3076923076923077,
+          "ppv": 0.0017444395987788923,
+          "flagged": 2293
+        }
+      ]
+    }
+  ],
+  "per_year": {
+    "severe_neonatal_outcome": [
+      {
+        "year": 2014,
+        "n": 462,
+        "positives": 23,
+        "roc_auc": 0.8647618104387441,
+        "pr_auc": 0.5166541459291697
+      },
+      {
+        "year": 2015,
+        "n": 1253,
+        "positives": 70,
+        "roc_auc": 0.8339029102765366,
+        "pr_auc": 0.4592510718828926
+      },
+      {
+        "year": 2016,
+        "n": 1686,
+        "positives": 81,
+        "roc_auc": 0.8373831775700934,
+        "pr_auc": 0.436614849646421
+      },
+      {
+        "year": 2017,
+        "n": 1524,
+        "positives": 66,
+        "roc_auc": 0.81523049424284,
+        "pr_auc": 0.4242934952761247
+      },
+      {
+        "year": 2018,
+        "n": 1497,
+        "positives": 65,
+        "roc_auc": 0.7825150408250968,
+        "pr_auc": 0.3337716973458381
+      },
+      {
+        "year": 2019,
+        "n": 1387,
+        "positives": 67,
+        "roc_auc": 0.7947648123021257,
+        "pr_auc": 0.21865001112535432
+      },
+      {
+        "year": 2020,
+        "n": 1284,
+        "positives": 42,
+        "roc_auc": 0.8047120619584388,
+        "pr_auc": 0.295307714473929
+      },
+      {
+        "year": 2021,
+        "n": 1241,
+        "positives": 58,
+        "roc_auc": 0.777246626052992,
+        "pr_auc": 0.3287626728924406
+      },
+      {
+        "year": 2022,
+        "n": 853,
+        "positives": 32,
+        "roc_auc": 0.7279613276492082,
+        "pr_auc": 0.16271969095795313
+      }
+    ],
+    "apgar5_below7": [
+      {
+        "year": 2015,
+        "n": 1253,
+        "positives": 22,
+        "roc_auc": 0.8121445978878961,
+        "pr_auc": 0.22746776975999775
+      },
+      {
+        "year": 2016,
+        "n": 1686,
+        "positives": 17,
+        "roc_auc": 0.7632784689669756,
+        "pr_auc": 0.0711089563585805
+      },
+      {
+        "year": 2017,
+        "n": 1524,
+        "positives": 12,
+        "roc_auc": 0.7619874338624338,
+        "pr_auc": 0.12639819979218983
+      },
+      {
+        "year": 2018,
+        "n": 1497,
+        "positives": 16,
+        "roc_auc": 0.8024772113436867,
+        "pr_auc": 0.16749717442901363
+      },
+      {
+        "year": 2019,
+        "n": 1387,
+        "positives": 18,
+        "roc_auc": 0.8315680545410276,
+        "pr_auc": 0.16886849224819803
+      },
+      {
+        "year": 2020,
+        "n": 1284,
+        "positives": 14,
+        "roc_auc": 0.7623453318335208,
+        "pr_auc": 0.14698774040883913
+      },
+      {
+        "year": 2021,
+        "n": 1241,
+        "positives": 21,
+        "roc_auc": 0.809855581576893,
+        "pr_auc": 0.19085958212876666
+      },
+      {
+        "year": 2022,
+        "n": 853,
+        "positives": 12,
+        "roc_auc": 0.7275564803804994,
+        "pr_auc": 0.04652419960516063
+      }
+    ],
+    "neonatal_care_admission": [
+      {
+        "year": 2014,
+        "n": 462,
+        "positives": 49,
+        "roc_auc": 0.7951771507634531,
+        "pr_auc": 0.5272405395505398
+      },
+      {
+        "year": 2015,
+        "n": 1253,
+        "positives": 109,
+        "roc_auc": 0.8004827741066273,
+        "pr_auc": 0.4669434393319679
+      },
+      {
+        "year": 2016,
+        "n": 1686,
+        "positives": 117,
+        "roc_auc": 0.8188431849999729,
+        "pr_auc": 0.49875324647744373
+      },
+      {
+        "year": 2017,
+        "n": 1524,
+        "positives": 124,
+        "roc_auc": 0.7963652073732719,
+        "pr_auc": 0.46819759345532463
+      },
+      {
+        "year": 2018,
+        "n": 1497,
+        "positives": 121,
+        "roc_auc": 0.7451440274841438,
+        "pr_auc": 0.44046123467219805
+      },
+      {
+        "year": 2019,
+        "n": 1387,
+        "positives": 142,
+        "roc_auc": 0.7707675773516602,
+        "pr_auc": 0.45689144859675085
+      },
+      {
+        "year": 2020,
+        "n": 1284,
+        "positives": 98,
+        "roc_auc": 0.7702059744639846,
+        "pr_auc": 0.4410963820559194
+      },
+      {
+        "year": 2021,
+        "n": 1241,
+        "positives": 109,
+        "roc_auc": 0.7625660518040653,
+        "pr_auc": 0.4255691263116167
+      },
+      {
+        "year": 2022,
+        "n": 853,
+        "positives": 74,
+        "roc_auc": 0.8052683620719564,
+        "pr_auc": 0.4833967991016531
+      },
+      {
+        "year": 2023,
+        "n": 262,
+        "positives": 20,
+        "roc_auc": 0.8528925619834712,
+        "pr_auc": 0.5235512841307044
+      }
+    ]
+  }
+}

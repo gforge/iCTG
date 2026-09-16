@@ -94,3 +94,26 @@ def test_short_recording_is_dropped_when_padding_disabled() -> None:
 
     assert seq is None
     assert raw_len == 20
+
+
+def test_stv_channel_follows_fhr_and_is_missing_where_fhr_is_missing() -> None:
+    from dataclasses import replace
+
+    from ctg_ml.multimodal_preprocess import n_signal_channels, sequence_sql
+
+    cfg = replace(_make_cfg(), include_stv_channel=True)
+    channels = sequence_channel_names(cfg)
+    assert channels[:3] == ["FHR", "toco", "fhr_stv"]
+    assert n_signal_channels(channels) == 3
+    assert n_signal_channels(sequence_channel_names(_make_cfg())) == 2
+    assert "fhr_stv" in sequence_sql(cfg) and "fhr_stv" not in sequence_sql(_make_cfg())
+
+    group = _make_group(60)
+    group["fhr_stv"] = 1.5
+    group.loc[10, "fhr"] = 0.0  # missing FHR (zero) -> variability missing too
+    group.loc[20, "fhr_stv"] = np.nan
+    seq, _ = _finalize_sequence(group, cfg)
+    assert seq is not None
+    stv = seq[channels.index("fhr_stv")]
+    assert np.isnan(stv[10]) and np.isnan(stv[20])
+    assert np.nansum(stv) == 1.5 * 58
